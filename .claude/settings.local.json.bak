@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(nudge --help)",
+      "Bash(nudge -h)",
+      "Bash(nudge --version)",
+      "Bash(nudge claude *)",
+      "Bash(nudge learn *)",
+      "Bash(nudge check *)",
+      "WebFetch(domain:github.com)",
+      "Bash(nudge validate *)",
+      "Bash(nudge test *)"
+    ]
+  }
+}
