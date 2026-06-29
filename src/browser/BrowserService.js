@@ -19,6 +19,7 @@ import { assertBrowserNavigationAllowed, assertBrowserNavigationResultAllowed, a
 import { InterceptManager, matchesPattern } from './InterceptManager.js';
 import { HarRecorder } from './HarRecorder.js';
 import { EventRecorder } from './EventRecorder.js';
+import { DeviceEmulator } from './DeviceEmulator.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -50,6 +51,8 @@ export class BrowserService {
     this.interceptorInstalled = false;
     this.harRecorder = new HarRecorder();
     this.eventRecorder = new EventRecorder();
+    this.deviceEmulator = new DeviceEmulator();
+    this.activeDevice = null;
   }
 
   async start() {
@@ -99,6 +102,7 @@ export class BrowserService {
     this.logs.clear();
     this.harRecorder.clearAll();
     this.eventRecorder.clearAll();
+    this.activeDevice = null;
     this.currentTargetId = null;
     this.startedAt = null;
 
@@ -766,6 +770,28 @@ export class BrowserService {
   async eventScript({ targetId } = {}) {
     const { steps } = this.eventRecorder.toScript(targetId);
     return { ok: true, profileName: this.profileName, steps, count: steps.length };
+  }
+
+  // ── Device Emulation (Phase 23) ──────────────────────────────────────────────
+
+  async deviceEmulate({ name, targetId } = {}) {
+    const spec = this.deviceEmulator.resolve(name);
+    const page = await this.#getPage(targetId);
+    await page.setViewportSize({ width: spec.width, height: spec.height });
+    this.activeDevice = spec;
+    return { ok: true, profileName: this.profileName, device: spec };
+  }
+
+  async deviceReset({ targetId } = {}) {
+    const page = await this.#getPage(targetId);
+    const vp   = this.defaultViewport ?? { width: 1280, height: 720 };
+    await page.setViewportSize(vp);
+    this.activeDevice = null;
+    return { ok: true, profileName: this.profileName, reset: true, viewport: vp };
+  }
+
+  async deviceList() {
+    return { ok: true, profileName: this.profileName, devices: this.deviceEmulator.list(), active: this.activeDevice };
   }
 
   async #ensureInterceptorInstalled() {

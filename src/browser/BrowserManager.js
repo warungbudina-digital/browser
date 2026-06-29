@@ -42,6 +42,7 @@ export class BrowserManager {
       interceptActions: ['intercept-add', 'intercept-list', 'intercept-remove', 'intercept-clear'],
       harActions:       ['har-get', 'har-clear'],
       eventActions:     ['event-list', 'event-clear', 'event-script'],
+      deviceActions:    ['device-list', 'device-emulate', 'device-reset'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -170,9 +171,12 @@ export class BrowserManager {
       case 'intercept-clear':  return service.interceptClear();
       case 'har-get':      return service.harGet(payload);
       case 'har-clear':    return service.harClear(payload);
-      case 'event-list':   return service.eventList(payload);
-      case 'event-clear':  return service.eventClear(payload);
-      case 'event-script': return service.eventScript(payload);
+      case 'event-list':    return service.eventList(payload);
+      case 'event-clear':   return service.eventClear(payload);
+      case 'event-script':  return service.eventScript(payload);
+      case 'device-list':    return service.deviceList();
+      case 'device-emulate': return service.deviceEmulate(payload);
+      case 'device-reset':   return service.deviceReset(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
