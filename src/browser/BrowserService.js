@@ -23,6 +23,7 @@ import { DeviceEmulator } from './DeviceEmulator.js';
 import { ResponseTransformer, applyTransforms } from './ResponseTransformer.js';
 import { storageFilename, serializeStorage, parseStorageFile } from './StoragePersistence.js';
 import { filterByDomain, filterByName, filterByPath, filterExpired, groupByDomain, formatNetscape } from './CookieFilter.js';
+import { GeolocationEmulator } from './GeolocationEmulator.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -57,6 +58,7 @@ export class BrowserService {
     this.eventRecorder = new EventRecorder();
     this.deviceEmulator = new DeviceEmulator();
     this.activeDevice = null;
+    this.geoEmulator = new GeolocationEmulator();
   }
 
   async start() {
@@ -927,5 +929,38 @@ export class BrowserService {
 
       return route.continue();
     });
+  }
+
+  // ── Geolocation Emulation (Phase 27) ─────────────────────────────────────────
+
+  async geoList() {
+    const locations = [...this.geoEmulator.list().entries()].map(([name, spec]) => ({ name, ...spec }));
+    return { ok: true, presets: this.geoEmulator.presets(), locations, count: locations.length };
+  }
+
+  async geoAdd({ name, latitude, longitude, accuracy } = {}) {
+    const spec = this.geoEmulator.add(name, { latitude, longitude, accuracy });
+    return { ok: true, name: String(name).trim(), spec };
+  }
+
+  async geoRemove({ name } = {}) {
+    const removed = this.geoEmulator.remove(name);
+    return { ok: true, name, removed };
+  }
+
+  async geoEmulate({ targetId, name, latitude, longitude, accuracy } = {}) {
+    const page = this.#pageFor(targetId);
+    const spec  = name != null
+      ? this.geoEmulator.resolve(name)
+      : this.geoEmulator.validateSpec({ latitude, longitude, accuracy });
+    await page.context().grantPermissions(['geolocation']);
+    await page.context().setGeolocation({ latitude: spec.latitude, longitude: spec.longitude, accuracy: spec.accuracy });
+    return { ok: true, targetId, geolocation: spec };
+  }
+
+  async geoReset({ targetId } = {}) {
+    const page = this.#pageFor(targetId);
+    await page.context().setGeolocation(null);
+    return { ok: true, targetId, reset: true };
   }
 }
