@@ -46,6 +46,16 @@ function locatorRecipe(node, nth) {
   };
 }
 
+function nodeAriaState(node) {
+  return {
+    checked:  node.ariaChecked  ?? null,
+    expanded: node.ariaExpanded ?? null,
+    disabled: node.ariaDisabled ?? null,
+    required: node.ariaRequired ?? null,
+    current:  node.ariaCurrent  ?? null,
+  };
+}
+
 function formatLine(ref, node, interactive) {
   const role = inferRole(node);
   const name = inferName(node);
@@ -112,7 +122,7 @@ export function buildSnapshotFromNodes({
     duplicateCounter.set(key, nth + 1);
 
     const ref = interactive ? `e${refs.length + 1}` : String(refs.length + 1);
-    refs.push({ ref, recipe: locatorRecipe(node, nth), frameIndex: 0 });
+    refs.push({ ref, recipe: locatorRecipe(node, nth), frameIndex: 0, ariaState: nodeAriaState(node) });
     lines.push(formatLine(ref, node, interactive));
   }
 
@@ -134,7 +144,7 @@ export function buildSnapshotFromNodes({
         ? `f${frameIndex}e${frameElemCount}`
         : `f${frameIndex}${frameElemCount}`;
 
-      refs.push({ ref, recipe: locatorRecipe(node, nth), frameIndex });
+      refs.push({ ref, recipe: locatorRecipe(node, nth), frameIndex, ariaState: nodeAriaState(node) });
       lines.push(formatLine(ref, node, interactive));
     }
   }

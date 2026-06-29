@@ -1,7 +1,9 @@
 export class RefStore {
   #snapshots = new Map();
+  #prev      = new Map(); // targetId → snapshot before last setSnapshot
 
   setSnapshot(targetId, snapshot) {
+    this.#prev.set(targetId, this.#snapshots.get(targetId) ?? null);
     this.#snapshots.set(targetId, {
       ...snapshot,
       capturedAt: new Date().toISOString()
@@ -9,7 +11,11 @@ export class RefStore {
   }
 
   getSnapshot(targetId) {
-    return this.#snapshots.get(targetId) || null;
+    return this.#snapshots.get(targetId) ?? null;
+  }
+
+  getPrevSnapshot(targetId) {
+    return this.#prev.get(targetId) ?? null;
   }
 
   getRef(targetId, ref) {

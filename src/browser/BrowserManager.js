@@ -32,7 +32,7 @@ export class BrowserManager {
       requestEndpoint: '/browser/request',
       profileEndpoint: '/browser/profiles',
       defaultProfile: state.activeProfile,
-      actions: ['status', 'start', 'stop', 'tabs', 'open', 'navigate', 'focus', 'close', 'snapshot', 'extract', 'screenshot', 'pdf', 'upload', 'download', 'trace', 'console', 'errors', 'requests', 'dialog', 'warmup', 'cookies', 'act'],
+      actions: ['status', 'start', 'stop', 'tabs', 'open', 'navigate', 'focus', 'close', 'snapshot', 'snapdiff', 'extract', 'screenshot', 'pdf', 'upload', 'download', 'trace', 'console', 'errors', 'requests', 'dialog', 'warmup', 'cookies', 'act'],
       extractKinds: ['text', 'meta', 'links', 'full'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
@@ -111,8 +111,9 @@ export class BrowserManager {
       case 'navigate': return service.navigate(payload.url, payload.targetId);
       case 'focus': return service.focus(payload.targetId);
       case 'close': return service.close(payload.targetId);
-      case 'snapshot': return service.snapshot(payload);
-      case 'extract':  return service.extract(payload);
+      case 'snapshot':  return service.snapshot(payload);
+      case 'snapdiff':  return service.snapdiff(payload);
+      case 'extract':   return service.extract(payload);
       case 'screenshot': return service.screenshot(payload);
       case 'pdf': return service.pdf(payload);
       case 'upload': return service.upload(payload);

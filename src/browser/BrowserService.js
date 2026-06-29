@@ -11,6 +11,7 @@ import {
   textCollector, metaCollector, linksCollector,
   buildTextContent, buildMetadata, buildLinks,
 } from './ContentExtractor.js';
+import { diff, diffText } from './SnapshotDiff.js';
 import { assertBrowserNavigationAllowed, assertBrowserNavigationResultAllowed, assertCdpEndpointAllowed } from '../security/ssrf.js';
 
 const PAGE_ID = Symbol('page-id');
@@ -185,6 +186,30 @@ export class BrowserService {
     });
     this.refStore.setSnapshot(this.#pageId(page), snapshot);
     return { ok: true, profileName: this.profileName, ...snapshot };
+  }
+
+  async snapdiff({ targetId, interactive = false, selector, limit = 150 }) {
+    const page     = await this.#getPage(targetId);
+    const pid      = this.#pageId(page);
+    const prevSnap = this.refStore.getSnapshot(pid); // current = "before"
+
+    const nodes    = await collectDomNodes(page, selector);
+    const newSnap  = buildSnapshotFromNodes({
+      targetId: pid, url: page.url(), title: await page.title(),
+      nodes, interactive, limit,
+    });
+    this.refStore.setSnapshot(pid, newSnap);
+
+    if (!prevSnap) {
+      return { ok: true, profileName: this.profileName, ...newSnap, diff: null, diffText: null };
+    }
+
+    const diffResult = diff(prevSnap, newSnap);
+    return {
+      ok: true, profileName: this.profileName, ...newSnap,
+      diff: diffResult,
+      diffText: diffText(diffResult),
+    };
   }
 
   async extract({ targetId, kind = 'text' }) {
