@@ -37,7 +37,8 @@ export class BrowserManager {
       defaultProfile: state.activeProfile,
       actions: ['status', 'start', 'stop', 'tabs', 'open', 'navigate', 'focus', 'close', 'snapshot', 'snapdiff', 'extract', 'screenshot', 'pdf', 'upload', 'download', 'trace', 'console', 'errors', 'requests', 'dialog', 'warmup', 'cookies', 'act'],
       extractKinds:  ['text', 'meta', 'links', 'full'],
-      scriptActions: ['script-save', 'script-list', 'script-get', 'script-delete', 'script-run'],
+      scriptActions:  ['script-save', 'script-list', 'script-get', 'script-delete', 'script-run'],
+      sessionActions: ['session-save', 'session-load', 'session-list', 'session-delete'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -155,7 +156,11 @@ export class BrowserManager {
       case 'dialog': return service.dialog(payload);
       case 'warmup': return service.warmup();
       case 'cookies': return service.cookies(payload);
-      case 'act': return service.act({ targetId: payload.targetId, request: payload.request });
+      case 'act':            return service.act({ targetId: payload.targetId, request: payload.request });
+      case 'session-save':   return service.sessionSave(payload);
+      case 'session-load':   return service.sessionLoad(payload);
+      case 'session-list':   return service.sessionList();
+      case 'session-delete': return service.sessionDelete(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }

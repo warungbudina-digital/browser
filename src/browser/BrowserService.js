@@ -12,6 +12,9 @@ import {
   buildTextContent, buildMetadata, buildLinks,
 } from './ContentExtractor.js';
 import { diff, diffText } from './SnapshotDiff.js';
+import {
+  sessionFilename, serializeSession, parseSessionFile, filterExpiredCookies,
+} from './SessionPersistence.js';
 import { assertBrowserNavigationAllowed, assertBrowserNavigationResultAllowed, assertCdpEndpointAllowed } from '../security/ssrf.js';
 
 const PAGE_ID = Symbol('page-id');
@@ -404,6 +407,53 @@ export class BrowserService {
       default:
         throw new Error(`Unsupported cookies kind: ${kind}. Gunakan: get | set | clear`);
     }
+  }
+
+  get #sessionsDir() {
+    return path.join(this.artifactDir, 'sessions');
+  }
+
+  async sessionSave({ name }) {
+    const fname = sessionFilename(name);
+    await this.start();
+    await ensureDir(this.#sessionsDir);
+    const state = await this.context.storageState();
+    const data  = serializeSession(state, { profile: this.profileName });
+    await fs.writeFile(path.join(this.#sessionsDir, fname), JSON.stringify(data, null, 2), 'utf8');
+    return { ok: true, profileName: this.profileName, name, cookieCount: data.cookieCount, originCount: data.originCount };
+  }
+
+  async sessionLoad({ name }) {
+    const fname    = sessionFilename(name);
+    const filePath = path.join(this.#sessionsDir, fname);
+    const raw      = JSON.parse(await fs.readFile(filePath, 'utf8'));
+    const parsed   = parseSessionFile(raw);
+    await this.start();
+    const validCookies = filterExpiredCookies(parsed.cookies);
+    if (validCookies.length) await this.context.addCookies(validCookies);
+    return {
+      ok: true, profileName: this.profileName, name,
+      cookieCount: validCookies.length,
+      expiredSkipped: parsed.cookies.length - validCookies.length,
+    };
+  }
+
+  async sessionList() {
+    try {
+      const files = await fs.readdir(this.#sessionsDir);
+      const sessions = files
+        .filter((f) => f.endsWith('.json'))
+        .map((f) => f.slice(0, -5));
+      return { ok: true, profileName: this.profileName, sessions };
+    } catch {
+      return { ok: true, profileName: this.profileName, sessions: [] };
+    }
+  }
+
+  async sessionDelete({ name }) {
+    const fname = sessionFilename(name);
+    await fs.unlink(path.join(this.#sessionsDir, fname));
+    return { ok: true, profileName: this.profileName, deleted: name };
   }
 
   async act({ targetId, request }) {
