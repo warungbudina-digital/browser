@@ -11,6 +11,11 @@ services:
       BROWSER_PROFILES_ROOT_DIR: /data/profiles
       BROWSER_ARTIFACT_DIR: /data/artifacts
       BROWSER_STATE_DIR: /data/state
+      BROWSER_STEALTH: "true"
+      # BROWSER_PROXY_SERVER: "http://host:port"
+      # BROWSER_PROXY_USERNAME: ""
+      # BROWSER_PROXY_PASSWORD: ""
+      # BROWSER_USER_AGENT: ""
     volumes:
       - ./data/profiles:/data/profiles
       - ./data/artifacts:/data/artifacts

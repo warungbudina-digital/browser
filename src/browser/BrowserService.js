@@ -1,8 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { chromium } from 'playwright';
+import { chromium } from 'patchright';
 import { RefStore } from './RefStore.js';
+import { FingerprintManager } from './FingerprintManager.js';
 import { buildSnapshotFromNodes, collectDomNodes } from './snapshot.js';
 import { assertBrowserNavigationAllowed, assertBrowserNavigationResultAllowed, assertCdpEndpointAllowed } from '../security/ssrf.js';
 
@@ -23,6 +24,7 @@ export class BrowserService {
     this.artifactDir = artifactDir;
     this.defaultViewport = defaultViewport;
     this.ssrfPolicy = ssrfPolicy;
+    this.stealthEnabled = profile.stealth !== false;
     this.refStore = new RefStore();
     this.browser = null;
     this.context = null;
@@ -38,11 +40,19 @@ export class BrowserService {
     await ensureDir(this.artifactDir);
     if (this.profile.driver === 'managed') {
       await ensureDir(this.profile.profileDir);
+      const fp = FingerprintManager.generate(this.profileName);
       this.context = await chromium.launchPersistentContext(this.profile.profileDir, {
         headless: this.profile.headless !== false,
-        viewport: this.defaultViewport,
+        viewport: this.stealthEnabled ? fp.viewport : this.defaultViewport,
         executablePath: this.profile.executablePath,
         channel: this.profile.channel,
+        userAgent: this.profile.userAgent || (this.stealthEnabled ? fp.userAgent : undefined),
+        locale: this.stealthEnabled ? fp.locale : undefined,
+        timezoneId: this.stealthEnabled ? fp.timezoneId : undefined,
+        geolocation: this.stealthEnabled ? fp.geolocation : undefined,
+        permissions: this.stealthEnabled ? ['geolocation'] : undefined,
+        colorScheme: this.stealthEnabled ? fp.colorScheme : undefined,
+        proxy: this.profile.proxy || undefined,
         args: ['--disable-dev-shm-usage']
       });
     } else if (this.profile.driver === 'remote-cdp') {
@@ -90,7 +100,9 @@ export class BrowserService {
       targetCount: this.context?.pages().length || 0,
       headless: this.profile.driver === 'managed' ? this.profile.headless !== false : null,
       mode: this.profile.driver,
-      traceActive: this.traceState.active
+      traceActive: this.traceState.active,
+      stealth: this.stealthEnabled,
+      proxy: this.profile.proxy ? { server: this.profile.proxy.server } : null
     };
   }
 
@@ -267,6 +279,11 @@ export class BrowserService {
     switch (request.kind) {
       case 'click': {
         const locator = await this.#resolveLocator(page, request.ref, request.selector);
+        if (this.stealthEnabled) {
+          await this.#humanDelay(50, 180);
+          await this.#humanMouseMove(page, locator);
+          await this.#humanDelay(30, 100);
+        }
         if (request.doubleClick) await locator.dblclick({ timeout: request.timeoutMs });
         else await locator.click({ timeout: request.timeoutMs, button: request.button || 'left', modifiers: request.modifiers, delay: request.delayMs });
         await this.#assertCurrentUrlAllowed(page);
@@ -274,7 +291,12 @@ export class BrowserService {
       }
       case 'type': {
         const locator = await this.#resolveLocator(page, request.ref, request.selector);
+        if (this.stealthEnabled) {
+          await this.#humanDelay(50, 150);
+          await this.#humanMouseMove(page, locator);
+        }
         await locator.click({ timeout: request.timeoutMs });
+        if (this.stealthEnabled) await this.#humanDelay(80, 250);
         try {
           await locator.fill('');
           if (request.slowly) await locator.pressSequentially(request.text, { timeout: request.timeoutMs });
@@ -282,11 +304,15 @@ export class BrowserService {
         } catch {
           await page.keyboard.type(request.text);
         }
-        if (request.submit) await page.keyboard.press('Enter');
+        if (request.submit) {
+          if (this.stealthEnabled) await this.#humanDelay(100, 300);
+          await page.keyboard.press('Enter');
+        }
         await this.#assertCurrentUrlAllowed(page);
         return { ok: true, profileName: this.profileName, kind: request.kind, targetId: this.#pageId(page) };
       }
       case 'press':
+        if (this.stealthEnabled) await this.#humanDelay(30, 100);
         await page.keyboard.press(request.key, request.delayMs ? { delay: request.delayMs } : undefined);
         await this.#assertCurrentUrlAllowed(page);
         return { ok: true, profileName: this.profileName, kind: request.kind, targetId: this.#pageId(page) };
@@ -429,5 +455,22 @@ export class BrowserService {
     const eventPromise = page.waitForEvent('download', { timeout: timeoutMs ?? 30000 });
     await trigger();
     return eventPromise;
+  }
+
+  async #humanDelay(minMs, maxMs) {
+    const ms = Math.floor(Math.random() * (maxMs - minMs) + minMs);
+    await new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async #humanMouseMove(page, locator) {
+    try {
+      const box = await locator.boundingBox({ timeout: 2000 });
+      if (!box) return;
+      const x = box.x + box.width * (0.25 + Math.random() * 0.5);
+      const y = box.y + box.height * (0.25 + Math.random() * 0.5);
+      await page.mouse.move(x, y, { steps: Math.floor(8 + Math.random() * 10) });
+    } catch {
+      // best-effort — jangan block action utama
+    }
   }
 }

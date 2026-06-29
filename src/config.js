@@ -53,7 +53,14 @@ export function loadConfig(env = process.env) {
           executablePath: env.BROWSER_EXECUTABLE_PATH || undefined,
           channel: env.BROWSER_CHANNEL || undefined,
           profileDir: path.resolve(env.BROWSER_PROFILE_DIR || path.join(profilesRootDir, 'openclaw')),
-          color: '#FF4500'
+          color: '#FF4500',
+          stealth: bool(env.BROWSER_STEALTH, true),
+          userAgent: env.BROWSER_USER_AGENT || undefined,
+          proxy: env.BROWSER_PROXY_SERVER ? {
+            server: env.BROWSER_PROXY_SERVER,
+            username: env.BROWSER_PROXY_USERNAME || undefined,
+            password: env.BROWSER_PROXY_PASSWORD || undefined
+          } : undefined
         },
         remote: env.BROWSER_CDP_URL ? {
           driver: 'remote-cdp',

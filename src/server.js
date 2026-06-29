@@ -71,7 +71,14 @@ const profileSchema = z.object({
     channel: z.string().optional(),
     profileDir: z.string().optional(),
     cdpUrl: z.string().optional(),
-    color: z.string().optional()
+    color: z.string().optional(),
+    stealth: z.boolean().optional(),
+    userAgent: z.string().optional(),
+    proxy: z.object({
+      server: z.string(),
+      username: z.string().optional(),
+      password: z.string().optional()
+    }).optional()
   }).optional()
 });
 

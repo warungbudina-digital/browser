@@ -152,13 +152,21 @@ export class BrowserManager {
   async #normalizeProfile(input) {
     const driver = input.driver || 'managed';
     if (driver === 'managed') {
+      const proxy = input.proxy?.server ? {
+        server: String(input.proxy.server),
+        username: input.proxy.username || undefined,
+        password: input.proxy.password || undefined
+      } : undefined;
       return {
         driver,
         headless: input.headless !== false,
         executablePath: input.executablePath || undefined,
         channel: input.channel || undefined,
         profileDir: input.profileDir || path.join(this.config.profilesRootDir, input.name),
-        color: input.color || '#FF4500'
+        color: input.color || '#FF4500',
+        stealth: input.stealth !== false,
+        userAgent: input.userAgent || undefined,
+        proxy
       };
     }
     if (driver === 'remote-cdp') {
@@ -168,7 +176,8 @@ export class BrowserManager {
       return {
         driver,
         cdpUrl,
-        color: input.color || '#00AA00'
+        color: input.color || '#00AA00',
+        stealth: input.stealth !== false
       };
     }
     throw new Error(`Unsupported profile driver: ${driver}`);

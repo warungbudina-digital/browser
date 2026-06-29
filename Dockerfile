@@ -9,7 +9,7 @@ ENV BROWSER_HEADLESS=true
 
 COPY package.json ./
 RUN npm install
-RUN npx playwright install --with-deps chromium
+RUN npx patchright install --with-deps chromium
 
 COPY src ./src
 COPY examples ./examples
