@@ -9,16 +9,20 @@ export class ScheduleStore {
     this.#pool = pgPool;
   }
 
-  async listAll({ enabled } = {}) {
+  async listAll({ enabled, workspace } = {}) {
+    const conds  = [];
+    const params = [];
+    if (enabled != null) conds.push(`enabled = ${enabled ? 'true' : 'false'}`);
+    if (workspace)       conds.push(`workspace = $${params.push(workspace)}`);
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
     const { rows } = await this.#pool.query(
-      `SELECT * FROM scraper_schedules
-       ${enabled != null ? `WHERE enabled = ${enabled ? 'true' : 'false'}` : ''}
-       ORDER BY created_at`
+      `SELECT * FROM scraper_schedules ${where} ORDER BY created_at`,
+      params
     );
     return rows;
   }
 
-  async listEnabled() { return this.listAll({ enabled: true }); }
+  async listEnabled() { return this.listAll({ enabled: true }); } // scheduler membaca semua workspace
 
   async get(id) {
     const { rows } = await this.#pool.query(
@@ -28,13 +32,13 @@ export class ScheduleStore {
     return rows[0] ?? null;
   }
 
-  async create({ platform, targetUrl, profileName = 'openclaw', cronExpr, options = {}, webhookUrl = null }) {
+  async create({ platform, targetUrl, profileName = 'openclaw', cronExpr, options = {}, webhookUrl = null, workspace = 'default' }) {
     const { rows } = await this.#pool.query(
       `INSERT INTO scraper_schedules
-         (platform, target_url, profile_name, cron_expr, options, webhook_url)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+         (platform, target_url, profile_name, cron_expr, options, webhook_url, workspace)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
        RETURNING *`,
-      [platform, targetUrl, profileName, cronExpr, JSON.stringify(options), webhookUrl]
+      [platform, targetUrl, profileName, cronExpr, JSON.stringify(options), webhookUrl, workspace]
     );
     return rows[0];
   }

@@ -36,11 +36,11 @@ export class DataStore {
   // Job CRUD
   // ─────────────────────────────────────────────
 
-  async saveJob({ id, platform, targetUrl, profileName = 'openclaw', status = 'pending', webhookUrl = null }) {
+  async saveJob({ id, platform, targetUrl, profileName = 'openclaw', status = 'pending', webhookUrl = null, workspace = 'default' }) {
     await this.#pool.query(
-      `INSERT INTO scraper_jobs (id, platform, target_url, profile_name, status, webhook_url)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [id, platform, targetUrl, profileName, status, webhookUrl]
+      `INSERT INTO scraper_jobs (id, platform, target_url, profile_name, status, webhook_url, workspace)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [id, platform, targetUrl, profileName, status, webhookUrl, workspace]
     );
   }
 
@@ -64,11 +64,12 @@ export class DataStore {
     return rows[0] ?? null;
   }
 
-  async listJobs({ platform, status, limit = 50, offset = 0 } = {}) {
+  async listJobs({ platform, status, workspace, limit = 50, offset = 0 } = {}) {
     const conditions = [];
     const params = [];
-    if (platform) { conditions.push(`platform = $${params.push(platform)}`); }
-    if (status)   { conditions.push(`status = $${params.push(status)}`); }
+    if (platform)  { conditions.push(`platform = $${params.push(platform)}`); }
+    if (status)    { conditions.push(`status = $${params.push(status)}`); }
+    if (workspace) { conditions.push(`workspace = $${params.push(workspace)}`); }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     params.push(limit, offset);
     const { rows } = await this.#pool.query(

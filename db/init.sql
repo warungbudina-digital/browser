@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS scraper_jobs (
 -- Migrasi idempoten untuk database yang sudah ada sebelum Phase 5
 ALTER TABLE scraper_jobs ADD COLUMN IF NOT EXISTS webhook_url TEXT;
 
+-- Migrasi Phase 12: workspace isolation
+ALTER TABLE scraper_jobs ADD COLUMN IF NOT EXISTS workspace TEXT NOT NULL DEFAULT 'default';
+CREATE INDEX IF NOT EXISTS idx_jobs_workspace ON scraper_jobs(workspace);
+
 CREATE TABLE IF NOT EXISTS scraped_profiles (
   id              SERIAL      PRIMARY KEY,
   job_id          TEXT        NOT NULL REFERENCES scraper_jobs(id) ON DELETE CASCADE,
@@ -100,3 +104,7 @@ CREATE TABLE IF NOT EXISTS scraper_schedules (
 
 CREATE INDEX IF NOT EXISTS idx_schedules_enabled  ON scraper_schedules(enabled);
 CREATE INDEX IF NOT EXISTS idx_schedules_platform ON scraper_schedules(platform);
+
+-- Migrasi Phase 12: workspace isolation
+ALTER TABLE scraper_schedules ADD COLUMN IF NOT EXISTS workspace TEXT NOT NULL DEFAULT 'default';
+CREATE INDEX IF NOT EXISTS idx_schedules_workspace ON scraper_schedules(workspace);

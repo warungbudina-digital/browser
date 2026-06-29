@@ -6,6 +6,7 @@ import * as analytics from './scraper/analytics.js';
 import { createApiKeyHook } from './middleware/apiKey.js';
 import { createAuditHooks } from './middleware/auditHook.js';
 import { createRateLimitHook } from './middleware/rateLimitHook.js';
+import { createWorkspaceHook } from './middleware/workspaceHook.js';
 import {
   EXPORT_FORMATS, EXPORT_TYPES,
   queryPosts, queryProfiles, queryJobs,
@@ -124,28 +125,58 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
     app.addHook('onResponse', auditHooks.onResponse);
   }
 
+  // ── Workspace context (dipasang setelah auth, sebelum rate limit) ────────
+  app.addHook('preHandler', createWorkspaceHook());
+
   // ── Per-key rate limiting (dipasang setelah auth agar keyName tersedia) ──
   const rateLimitHook = createRateLimitHook(rateLimiter);
   if (rateLimitHook) app.addHook('preHandler', rateLimitHook);
 
   app.get('/health', async () => ({ ok: true }));
   app.get('/browser/capabilities', async () => browser.capabilities());
-  app.get('/browser/profiles', async () => browser.listProfiles());
+  app.get('/browser/profiles', async (req) => {
+    const result = await browser.listProfiles();
+    const ws = req.workspace;
+    if (ws && !ws.isDefault) {
+      result.profiles = result.profiles
+        .filter((p) => ws.owns(p.name))
+        .map((p) => ({ ...p, name: ws.unqualify(p.name) }));
+      if (result.activeProfile) result.activeProfile = ws.unqualify(result.activeProfile);
+    }
+    return result;
+  });
 
   app.post('/browser/profiles', async (req, reply) => {
     try {
       const payload = profileSchema.parse(req.body || {});
+      const ws = req.workspace;
+
+      // Qualify semua name fields dengan workspace namespace
+      const qualifyName = (n) => ws?.qualify(n) ?? n;
+      const qualifiedName = payload.name ? qualifyName(payload.name) : undefined;
+      const qualifiedProfile = payload.profile?.name
+        ? { ...payload.profile, name: qualifyName(payload.profile.name) }
+        : payload.profile;
+
+      let result;
       switch (payload.action) {
-        case 'list': return browser.listProfiles();
-        case 'get': return browser.getProfile(payload.name);
-        case 'create': return browser.createProfile(payload.profile || {});
-        case 'update': return browser.updateProfile(payload.name, payload.profile || {});
-        case 'remove': return browser.removeProfile(payload.name);
-        case 'select': return browser.selectProfile(payload.name);
+        case 'list':   result = await browser.listProfiles(); break;
+        case 'get':    result = await browser.getProfile(qualifiedName); break;
+        case 'create': result = await browser.createProfile(qualifiedProfile || {}); break;
+        case 'update': result = await browser.updateProfile(qualifiedName, qualifiedProfile || {}); break;
+        case 'remove': result = await browser.removeProfile(qualifiedName); break;
+        case 'select': result = await browser.selectProfile(qualifiedName); break;
         default:
           reply.code(400);
           return { ok: false, error: `Unsupported profile action: ${payload.action}` };
       }
+
+      // Unqualify profile names dalam response (agar client tidak tahu tentang namespace internals)
+      if (result?.ok && ws && !ws.isDefault) {
+        if (result.profile?.name) result.profile.name = ws.unqualify(result.profile.name);
+        if (result.activeProfile) result.activeProfile = ws.unqualify(result.activeProfile);
+      }
+      return result;
     } catch (error) {
       reply.code(500);
       return { ok: false, error: error.message };
@@ -155,7 +186,9 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
   app.post('/browser/request', async (req, reply) => {
     try {
       const payload = requestSchema.parse(req.body || {});
-      return await browser.dispatch(payload.action, payload);
+      // Qualify profile name dengan workspace namespace
+      const qualifiedProfile = req.workspace?.qualify(payload.profile);
+      return await browser.dispatch(payload.action, { ...payload, profile: qualifiedProfile ?? payload.profile });
     } catch (error) {
       reply.code(500);
       return { ok: false, error: error.message };
@@ -187,7 +220,12 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
     app.post('/scraper/jobs', async (req, reply) => {
       try {
         const payload = scraperJobSchema.parse(req.body || {});
-        const job = await scraper.submit(payload);
+        const ws = req.workspace;
+        const job = await scraper.submit({
+          ...payload,
+          profileName: ws?.qualify(payload.profileName) ?? payload.profileName,
+          workspace:   ws?.name ?? 'default',
+        });
         reply.code(202);
         return { ok: true, job };
       } catch (err) {
@@ -196,12 +234,13 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
       }
     });
 
-    // List jobs
+    // List jobs — difilter ke workspace caller
     app.get('/scraper/jobs', async (req, reply) => {
       try {
         const { platform, status, limit, offset } = req.query;
         const jobs = await scraper.listJobs({
           platform, status,
+          workspace: req.workspace?.name ?? 'default',
           limit:  limit  ? Number(limit)  : 50,
           offset: offset ? Number(offset) : 0
         });
@@ -371,30 +410,37 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
   // ─────────────────────────────────────────────
 
   if (sessionStore) {
-    // List semua session (admin)
-    app.get('/sessions', async (_, reply) => {
+    // List session — difilter ke workspace caller (berdasarkan profile name prefix)
+    app.get('/sessions', async (req, reply) => {
       try {
-        return { ok: true, sessions: await sessionStore.listAll() };
+        const all = await sessionStore.listAll();
+        const ws  = req.workspace;
+        const sessions = ws && !ws.isDefault
+          ? all.filter((s) => ws.owns(s.profile))
+          : all;
+        return { ok: true, sessions };
       } catch (err) {
         reply.code(500); return { ok: false, error: err.message };
       }
     });
 
-    // List session per profile
+    // List session per profile (profile di-qualify dengan workspace)
     app.get('/sessions/:profile', async (req, reply) => {
       try {
-        return { ok: true, sessions: await sessionStore.list(req.params.profile) };
+        const qualifiedProfile = req.workspace?.qualify(req.params.profile) ?? req.params.profile;
+        return { ok: true, sessions: await sessionStore.list(qualifiedProfile) };
       } catch (err) {
         reply.code(500); return { ok: false, error: err.message };
       }
     });
 
-    // Hapus session per profile (opsional: ?platform=instagram)
+    // Hapus session (profile di-qualify dengan workspace)
     app.delete('/sessions/:profile', async (req, reply) => {
       try {
+        const qualifiedProfile = req.workspace?.qualify(req.params.profile) ?? req.params.profile;
         const { platform } = req.query;
-        await sessionStore.clear(req.params.profile, platform ?? null);
-        return { ok: true, cleared: { profile: req.params.profile, platform: platform ?? 'all' } };
+        await sessionStore.clear(qualifiedProfile, platform ?? null);
+        return { ok: true, cleared: { profile: qualifiedProfile, platform: platform ?? 'all' } };
       } catch (err) {
         reply.code(500); return { ok: false, error: err.message };
       }
@@ -429,13 +475,17 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
     app.post('/schedules', async (req, reply) => {
       try {
         const payload = scheduleSchema.parse(req.body || {});
-        // Validasi cron expression via node-cron
         const { default: cron } = await import('node-cron');
         if (!cron.validate(payload.cronExpr)) {
           reply.code(400);
           return { ok: false, error: `Cron expression tidak valid: "${payload.cronExpr}"` };
         }
-        const schedule = await scheduleStore.create(payload);
+        const ws = req.workspace;
+        const schedule = await scheduleStore.create({
+          ...payload,
+          profileName: ws?.qualify(payload.profileName) ?? payload.profileName,
+          workspace:   ws?.name ?? 'default',
+        });
         if (scheduler) await scheduler.reload(schedule.id);
         reply.code(201);
         return { ok: true, schedule };
@@ -445,13 +495,14 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
       }
     });
 
-    // List semua jadwal
+    // List jadwal — difilter ke workspace caller
     app.get('/schedules', async (req, reply) => {
       try {
         const { enabled } = req.query;
-        const schedules = await scheduleStore.listAll(
-          enabled != null ? { enabled: enabled === 'true' } : {}
-        );
+        const schedules = await scheduleStore.listAll({
+          ...(enabled != null ? { enabled: enabled === 'true' } : {}),
+          workspace: req.workspace?.name ?? 'default',
+        });
         return { ok: true, schedules };
       } catch (err) {
         reply.code(500); return { ok: false, error: err.message };
@@ -618,6 +669,40 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
       usage: rateLimiter ? rateLimiter.status() : null,
     }));
   }
+
+  // ─────────────────────────────────────────────
+  // Workspace API
+  // ─────────────────────────────────────────────
+
+  app.get('/admin/workspaces', async (_, reply) => {
+    try {
+      const result = { ok: true, current: null, workspaces: [] };
+
+      if (dataStore) {
+        const { rows } = await dataStore.pool.query(
+          `SELECT workspace,
+                  COUNT(*)                                    AS job_count,
+                  COUNT(*) FILTER (WHERE status = 'done')    AS done_count,
+                  COUNT(*) FILTER (WHERE status = 'failed')  AS failed_count,
+                  MAX(created_at)                            AS last_job_at
+           FROM scraper_jobs
+           GROUP BY workspace
+           ORDER BY workspace`
+        );
+        result.workspaces = rows.map((r) => ({
+          name:        r.workspace,
+          jobCount:    Number(r.job_count),
+          doneCount:   Number(r.done_count),
+          failedCount: Number(r.failed_count),
+          lastJobAt:   r.last_job_at,
+        }));
+      }
+
+      return result;
+    } catch (err) {
+      reply.code(500); return { ok: false, error: err.message };
+    }
+  });
 
   // ─────────────────────────────────────────────
   // SSE — Real-time Event Stream

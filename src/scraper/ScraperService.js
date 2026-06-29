@@ -27,14 +27,14 @@ export class ScraperService {
    * Jika JobQueue tersedia: masukkan ke queue BullMQ (persistent, retry).
    * Fallback: jalankan async in-process (Phase 3 behavior).
    */
-  async submit({ platform, targetUrl, profileName = 'openclaw', options = {}, webhookUrl = null }) {
+  async submit({ platform, targetUrl, profileName = 'openclaw', options = {}, webhookUrl = null, workspace = 'default' }) {
     if (!SCRAPERS[platform]) {
       throw new Error(`Platform tidak didukung: ${platform}. Pilih: ${SUPPORTED_PLATFORMS.join(', ')}`);
     }
     if (!targetUrl) throw new Error('targetUrl wajib diisi');
 
     const id = crypto.randomUUID();
-    await this.#store.saveJob({ id, platform, targetUrl, profileName, status: 'pending', webhookUrl });
+    await this.#store.saveJob({ id, platform, targetUrl, profileName, status: 'pending', webhookUrl, workspace });
 
     if (this.#queue) {
       await this.#queue.add({ jobId: id, platform, targetUrl, options, webhookUrl });
@@ -42,7 +42,7 @@ export class ScraperService {
       this.#run(id, platform, targetUrl, profileName, options).catch(() => {});
     }
 
-    return { id, platform, targetUrl, profileName, status: 'pending', webhookUrl };
+    return { id, platform, targetUrl, profileName, status: 'pending', webhookUrl, workspace };
   }
 
   async getJob(id) {
