@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { normalizeSsrfPolicy } from './security/ssrf.js';
+import { parseApiKeys } from './security/KeyStore.js';
 
 function bool(value, fallback = false) {
   if (value == null || value === '') return fallback;
@@ -60,7 +61,17 @@ export function loadConfig(env = process.env) {
     server: {
       port:   number(env.PORT, 8080),
       host:   env.HOST || '0.0.0.0',
-      apiKey: env.API_KEY || null, // null = mode open (development)
+      apiKey: env.API_KEY || null,
+      apiKeys: env.API_KEYS ? parseApiKeys(env.API_KEYS) : [],
+    },
+    rateLimit: {
+      enabled: bool(env.RATE_LIMIT_ENABLED, false),
+      rpm:     number(env.RATE_LIMIT_RPM, 60),
+      rph:     number(env.RATE_LIMIT_RPH, 1000),
+    },
+    auditLog: {
+      enabled: bool(env.AUDIT_LOG_ENABLED, true),
+      maxSize: number(env.AUDIT_LOG_MAX_SIZE, 5000),
     },
     browser: {
       stateDir,

@@ -10,8 +10,27 @@ import { ScheduleStore } from './scraper/ScheduleStore.js';
 import { Scheduler } from './scheduler/Scheduler.js';
 import { createMetrics } from './metrics/MetricsCollector.js';
 import { AlertManager } from './metrics/AlertManager.js';
+import { KeyStore } from './security/KeyStore.js';
+import { AuditLogger } from './security/AuditLogger.js';
+import { KeyRateLimiter } from './security/KeyRateLimiter.js';
 
 const config = loadConfig();
+
+// ── Phase 9: Auth, Audit, Rate Limit ─────────────────────────────────────────
+const keyStore = new KeyStore({
+  key:  config.server.apiKey,
+  keys: config.server.apiKeys,
+});
+
+const auditLogger = config.auditLog.enabled ? new AuditLogger({ maxSize: config.auditLog.maxSize }) : null;
+
+const rateLimiter = config.rateLimit.enabled
+  ? new KeyRateLimiter({ rpm: config.rateLimit.rpm, rph: config.rateLimit.rph })
+  : null;
+
+if (auditLogger) console.log(`[AuditLogger] Aktif — ring buffer ${config.auditLog.maxSize} entries`);
+if (rateLimiter) console.log(`[RateLimiter] Aktif — ${config.rateLimit.rpm} RPM / ${config.rateLimit.rph} RPH per key`);
+if (!keyStore.isEmpty()) console.log(`[KeyStore] ${keyStore.names().length} key(s): ${keyStore.names().join(', ')}`);
 
 const browser = new BrowserManager(config.browser);
 
@@ -76,7 +95,7 @@ if (scheduleStore && dataStore) {
   await scheduler.start();
 }
 
-const server = createServer(config, { browser, dataStore, sessionStore, scheduleStore, jobQueue, pool, scheduler, metrics, alertManager });
+const server = createServer(config, { browser, dataStore, sessionStore, scheduleStore, jobQueue, pool, scheduler, metrics, alertManager, keyStore, auditLogger, rateLimiter });
 
 try {
   await server.listen({ host: config.server.host, port: config.server.port });
@@ -85,7 +104,9 @@ try {
   if (jobQueue)     console.log(`Monitor dashboard: http://${config.server.host}:${config.server.port}/admin`);
   if (scheduler)    console.log('[Scheduler] Aktif — POST /schedules untuk buat jadwal baru');
   console.log(`[Metrics] Prometheus endpoint: http://${config.server.host}:${config.server.port}/metrics`);
-  if (config.server.apiKey) console.log('[Auth] API key aktif — semua endpoint dilindungi Bearer token');
+  if (!keyStore.isEmpty()) console.log('[Auth] API key aktif — semua endpoint dilindungi Bearer token');
+  if (rateLimiter) console.log(`[RateLimiter] ${config.rateLimit.rpm} RPM / ${config.rateLimit.rph} RPH per key`);
+  if (auditLogger) console.log(`[AuditLogger] GET /admin/audit, GET /admin/audit/stats tersedia`);
 } catch (error) {
   server.log.error(error);
   process.exit(1);

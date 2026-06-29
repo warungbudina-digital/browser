@@ -4,6 +4,8 @@ import { BrowserManager } from './browser/BrowserManager.js';
 import { ScraperService, SUPPORTED_PLATFORMS } from './scraper/ScraperService.js';
 import * as analytics from './scraper/analytics.js';
 import { createApiKeyHook } from './middleware/apiKey.js';
+import { createAuditHooks } from './middleware/auditHook.js';
+import { createRateLimitHook } from './middleware/rateLimitHook.js';
 
 const actRequestSchema = z.lazy(() => z.object({
   kind: z.string(),
@@ -98,14 +100,28 @@ const profileSchema = z.object({
   }).optional()
 });
 
-export function createServer(config, { browser: injectedBrowser, dataStore, sessionStore = null, scheduleStore = null, jobQueue = null, pool = null, scheduler = null, metrics = null, alertManager = null } = {}) {
+export function createServer(config, { browser: injectedBrowser, dataStore, sessionStore = null, scheduleStore = null, jobQueue = null, pool = null, scheduler = null, metrics = null, alertManager = null, keyStore = null, auditLogger = null, rateLimiter = null } = {}) {
   const app = Fastify({ logger: true });
   const browser = injectedBrowser ?? new BrowserManager(config.browser);
   const scraper = dataStore ? new ScraperService(browser, dataStore, jobQueue) : null;
 
-  // ── API key auth (global, /health dikecualikan) ──────────────────────────
-  const apiKeyHook = createApiKeyHook(config.server?.apiKey);
+  // ── API key auth ─────────────────────────────────────────────────────────
+  // Gunakan KeyStore jika tersedia, fallback ke legacy string key
+  const apiKeyHook = keyStore
+    ? createApiKeyHook(keyStore)
+    : createApiKeyHook(config.server?.apiKey);
   if (apiKeyHook) app.addHook('preHandler', apiKeyHook);
+
+  // ── Audit logging ────────────────────────────────────────────────────────
+  const auditHooks = createAuditHooks(auditLogger);
+  if (auditHooks) {
+    app.addHook('onRequest', auditHooks.onRequest);
+    app.addHook('onResponse', auditHooks.onResponse);
+  }
+
+  // ── Per-key rate limiting (dipasang setelah auth agar keyName tersedia) ──
+  const rateLimitHook = createRateLimitHook(rateLimiter);
+  if (rateLimitHook) app.addHook('preHandler', rateLimitHook);
 
   app.get('/health', async () => ({ ok: true }));
   app.get('/browser/capabilities', async () => browser.capabilities());
@@ -460,6 +476,48 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
   }
 
   // ─────────────────────────────────────────────
+  // Audit Log API
+  // ─────────────────────────────────────────────
+
+  if (auditLogger) {
+    const auditQuerySchema = z.object({
+      keyName: z.string().optional(),
+      status:  z.enum(['ok', 'error']).optional(),
+      limit:   z.coerce.number().int().positive().max(1000).optional(),
+      offset:  z.coerce.number().int().min(0).optional(),
+      since:   z.coerce.number().optional(),
+      until:   z.coerce.number().optional(),
+    });
+
+    app.get('/admin/audit', async (req, reply) => {
+      try {
+        const q = auditQuerySchema.parse(req.query);
+        return { ok: true, ...auditLogger.query(q) };
+      } catch (err) {
+        reply.code(400); return { ok: false, error: err.message };
+      }
+    });
+
+    app.get('/admin/audit/stats', async () => ({
+      ok: true,
+      stats: auditLogger.stats(),
+      total: auditLogger.size(),
+    }));
+  }
+
+  // ─────────────────────────────────────────────
+  // Key Registry API
+  // ─────────────────────────────────────────────
+
+  if (keyStore && !keyStore.isEmpty()) {
+    app.get('/admin/keys', async () => ({
+      ok:    true,
+      keys:  keyStore.names(),
+      usage: rateLimiter ? rateLimiter.status() : null,
+    }));
+  }
+
+  // ─────────────────────────────────────────────
   // Admin Dashboard HTML
   // ─────────────────────────────────────────────
 
@@ -527,6 +585,20 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
     <div class="sublabel">Platform Alerts</div>
     <div id="alerts-breakdown" style="font-size:12px;line-height:1.8"></div>
     <div class="err" id="metrics-err"></div>
+  </div>
+
+  <div class="card">
+    <h2>API Keys &amp; Rate Limits <span id="ts-keys"></span></h2>
+    <div id="keys-list" style="font-size:12px;line-height:1.8"></div>
+    <div class="err" id="keys-err"></div>
+  </div>
+
+  <div class="card">
+    <h2>Audit Log <span id="ts-audit"></span></h2>
+    <div class="metrics" id="audit-stats"></div>
+    <div class="sublabel">Recent requests</div>
+    <div id="audit-list" style="font-size:11px;line-height:1.8;font-family:monospace"></div>
+    <div class="err" id="audit-err"></div>
   </div>
 
   <script>
@@ -646,7 +718,45 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
       }
     }
 
-    function refresh() { refreshPool(); refreshQueue(); refreshSessions(); refreshSchedules(); refreshMetrics(); }
+    async function refreshKeys() {
+      try {
+        const k = await fetch('/admin/keys').then(r => r.json());
+        document.getElementById('ts-keys').textContent = now();
+        document.getElementById('keys-err').textContent = '';
+        const usage = k.usage || {};
+        document.getElementById('keys-list').innerHTML = (k.keys || []).map(function(name) {
+          const u = usage[name];
+          return '<div><span style="color:#79c0ff">' + name + '</span>' +
+            (u ? ' — ' + u.minuteUsed + '/' + u.rpmLimit + ' rpm | ' + u.hourUsed + '/' + u.rphLimit + ' rph' : '') +
+            '</div>';
+        }).join('') || '<div style="color:#8b949e">Auth tidak aktif (open mode)</div>';
+      } catch { document.getElementById('keys-list').innerHTML = '<div style="color:#8b949e">Auth tidak aktif (open mode)</div>'; }
+    }
+
+    async function refreshAudit() {
+      try {
+        const [stats, log] = await Promise.all([
+          fetch('/admin/audit/stats').then(r => r.json()),
+          fetch('/admin/audit?limit=20').then(r => r.json()),
+        ]);
+        document.getElementById('ts-audit').textContent = now();
+        document.getElementById('audit-err').textContent = '';
+
+        const s = stats.stats || {};
+        document.getElementById('audit-stats').innerHTML = Object.keys(s).map(function(k) {
+          return metric(k, s[k].total) + metric('OK', s[k].success, 'free') + metric('Err', s[k].error, s[k].error > 0 ? 'busy' : '') + metric('Avg', s[k].avgDurationMs + 'ms', '');
+        }).join('') || metric('Total', stats.total || 0);
+
+        document.getElementById('audit-list').innerHTML = (log.items || []).map(function(e) {
+          const ts  = new Date(e.ts).toLocaleTimeString();
+          const cls = e.status >= 400 ? 'color:#f85149' : 'color:#3fb950';
+          return '<div><span style="color:#8b949e">' + ts + '</span> <span style="' + cls + '">' + e.status + '</span> <span style="color:#e3b341">' + e.method + '</span> <span style="color:#c9d1d9">' + e.path + '</span> <span style="color:#8b949e">' + e.durationMs + 'ms</span>' +
+            (e.keyName && e.keyName !== 'anonymous' ? ' <span style="color:#79c0ff">[' + e.keyName + ']</span>' : '') + '</div>';
+        }).join('') || '<div style="color:#8b949e">Belum ada request tercatat</div>';
+      } catch { document.getElementById('audit-err').textContent = 'Audit log tidak tersedia'; }
+    }
+
+    function refresh() { refreshPool(); refreshQueue(); refreshSessions(); refreshSchedules(); refreshMetrics(); refreshKeys(); refreshAudit(); }
     refresh();
     setInterval(refresh, 3000);
   </script>
