@@ -89,13 +89,13 @@ services:
       BROWSER_POOL_SIZE:   "3"
       BROWSER_POOL_PREFIX: pool
       # ── MQTT (publish hasil ke CHR broker) ───
-      # MQTT_ENABLED:       "true"
-      # MQTT_BROKER_URL:    "mqtt://10.10.0.1:1883"   # CHR VPS via WireGuard
-      # MQTT_USERNAME:      ""
-      # MQTT_PASSWORD:      ""
-      # MQTT_TOPIC_PREFIX:  "scraper/results"
+      MQTT_ENABLED:      ${MQTT_ENABLED:-false}
+      MQTT_BROKER_URL:   ${MQTT_BROKER_URL:-mqtt://10.10.0.1:1883}
+      MQTT_USERNAME:     ${MQTT_USERNAME:-}
+      MQTT_PASSWORD:     ${MQTT_PASSWORD:-}
+      MQTT_TOPIC_PREFIX: ${MQTT_TOPIC_PREFIX:-scraper/results}
       # ── API Security ──────────────────────────
-      # API_KEY: "ganti-dengan-token-acak-panjang"
+      API_KEY:           ${API_KEY:-}
       # ── Proxy (opsional) ──────────────────────
       # BROWSER_PROXY_SERVER: "http://host:port"
       # BROWSER_PROXY_USERNAME: ""
