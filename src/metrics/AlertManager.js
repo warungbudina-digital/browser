@@ -14,17 +14,19 @@ export class AlertManager {
   #lastAlert = new Map(); // platform → timestamp of last alert fired
 
   #webhook;
-  #mqtt; // MqttPublisher | null
+  #mqtt;      // MqttPublisher | null
+  #eventBus;  // EventBus | null
 
   constructor(
     { consecutiveFailureThreshold = 3, cooldownMs = 5 * 60_000, webhookUrl = null } = {},
-    { mqttPublisher = null } = {}
+    { mqttPublisher = null, eventBus = null } = {}
   ) {
     this.#threshold       = consecutiveFailureThreshold;
     this.#cooldownMs      = cooldownMs;
     this.#alertWebhookUrl = webhookUrl;
     this.#webhook         = new WebhookManager();
     this.#mqtt            = mqttPublisher;
+    this.#eventBus        = eventBus;
   }
 
   /** Panggil saat job berhasil — reset counter platform. */
@@ -62,6 +64,15 @@ export class AlertManager {
       ' gagal ' + consecutiveFailures + 'x berturut-turut' +
       (jobId ? ' (job: ' + jobId + ')' : '')
     );
+
+    this.#eventBus?.publish('alert.fired', {
+      platform,
+      consecutiveFailures,
+      alertThreshold: this.#threshold,
+      jobId:          jobId ?? null,
+      error:          error ?? null,
+      ts:             Date.now(),
+    });
 
     await Promise.all([
       this.#alertWebhookUrl

@@ -100,7 +100,7 @@ const profileSchema = z.object({
   }).optional()
 });
 
-export function createServer(config, { browser: injectedBrowser, dataStore, sessionStore = null, scheduleStore = null, jobQueue = null, pool = null, scheduler = null, metrics = null, alertManager = null, keyStore = null, auditLogger = null, rateLimiter = null } = {}) {
+export function createServer(config, { browser: injectedBrowser, dataStore, sessionStore = null, scheduleStore = null, jobQueue = null, pool = null, scheduler = null, metrics = null, alertManager = null, keyStore = null, auditLogger = null, rateLimiter = null, eventBus = null, sseManager = null } = {}) {
   const app = Fastify({ logger: true });
   const browser = injectedBrowser ?? new BrowserManager(config.browser);
   const scraper = dataStore ? new ScraperService(browser, dataStore, jobQueue) : null;
@@ -458,6 +458,7 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
     scheduler: scheduler    ? scheduler.status()                       : null,
     alerts:    alertManager ? alertManager.status()                    : null,
     db:        dataStore    ? 'connected'                              : 'disabled',
+    sse:       sseManager   ? sseManager.status()                      : null,
   }));
 
   if (pool) {
@@ -514,6 +515,92 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
       ok:    true,
       keys:  keyStore.names(),
       usage: rateLimiter ? rateLimiter.status() : null,
+    }));
+  }
+
+  // ─────────────────────────────────────────────
+  // SSE — Real-time Event Stream
+  // ─────────────────────────────────────────────
+
+  if (eventBus && sseManager) {
+    const VALID_TOPICS = new Set([
+      'job.queued', 'job.started', 'job.completed', 'job.failed', 'job.retry',
+      'alert.fired', 'audit.error', '*',
+    ]);
+
+    /**
+     * GET /events?topics=job.completed,alert.fired
+     *
+     * Kosong atau '*' = subscribe ke semua topic.
+     * Content-Type: text/event-stream
+     */
+    app.get('/events', async (req, reply) => {
+      const rawTopics = String(req.query.topics ?? '').trim();
+      const topics = rawTopics
+        ? rawTopics.split(',').map((t) => t.trim()).filter((t) => VALID_TOPICS.has(t))
+        : ['*'];
+
+      reply.raw.writeHead(200, {
+        'Content-Type':  'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection':    'keep-alive',
+        'X-Accel-Buffering': 'no', // disable nginx buffering
+      });
+
+      // Kirim komentar awal agar client tahu koneksi berhasil
+      reply.raw.write(': connected topics=' + topics.join(',') + '\n\n');
+
+      sseManager.add(reply, eventBus, topics);
+
+      // Fastify tidak boleh menutup response sendiri — biarkan SSE tetap terbuka
+      await new Promise((resolve) => reply.raw.on('close', resolve));
+    });
+
+    /**
+     * GET /scraper/jobs/:id/stream — SSE stream spesifik untuk satu job.
+     * Otomatis tutup setelah menerima event job.completed atau job.failed untuk job ini.
+     */
+    app.get('/scraper/jobs/:id/stream', async (req, reply) => {
+      const { id } = req.params;
+
+      reply.raw.writeHead(200, {
+        'Content-Type':  'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection':    'keep-alive',
+        'X-Accel-Buffering': 'no',
+      });
+      reply.raw.write(': watching job ' + id + '\n\n');
+
+      let unsubClose;
+      const done = new Promise((resolve) => {
+        const handler = (topic, data) => {
+          if (data.jobId !== id) return;
+          try {
+            reply.raw.write('event: ' + topic + '\n');
+            reply.raw.write('data: ' + JSON.stringify(data) + '\n\n');
+          } catch { /* ignore */ }
+          if (topic === 'job.completed' || topic === 'job.failed') {
+            reply.raw.write('event: stream.end\ndata: {}\n\n');
+            resolve();
+          }
+        };
+        unsubClose = eventBus.subscribeMany(
+          ['job.started', 'job.completed', 'job.failed', 'job.retry'],
+          handler
+        );
+        reply.raw.on('close', resolve);
+      });
+
+      await done;
+      if (unsubClose) unsubClose();
+      try { reply.raw.end(); } catch { /* ignore */ }
+    });
+
+    // Status koneksi SSE untuk /monitor/health
+    app.get('/events/status', async () => ({
+      ok:          true,
+      connections: sseManager.count(),
+      topics:      eventBus.knownTopics(),
     }));
   }
 
@@ -585,6 +672,13 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
     <div class="sublabel">Platform Alerts</div>
     <div id="alerts-breakdown" style="font-size:12px;line-height:1.8"></div>
     <div class="err" id="metrics-err"></div>
+  </div>
+
+  <div class="card">
+    <h2>SSE Connections <span id="ts-sse"></span></h2>
+    <div class="metrics" id="sse-metrics"></div>
+    <div id="sse-topics" style="font-size:12px;line-height:1.8;margin-top:8px"></div>
+    <div class="err" id="sse-err"></div>
   </div>
 
   <div class="card">
@@ -718,6 +812,18 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
       }
     }
 
+    async function refreshSse() {
+      try {
+        const s = await fetch('/events/status').then(r => r.json());
+        document.getElementById('ts-sse').textContent = now();
+        document.getElementById('sse-err').textContent = '';
+        document.getElementById('sse-metrics').innerHTML = metric('Clients', s.connections, s.connections > 0 ? 'free' : '');
+        document.getElementById('sse-topics').innerHTML = s.topics.length
+          ? 'Topics aktif: <span style="color:#e3b341">' + s.topics.join(', ') + '</span>'
+          : '<span style="color:#8b949e">Belum ada event diterbitkan</span>';
+      } catch { document.getElementById('sse-err').textContent = 'SSE tidak aktif'; }
+    }
+
     async function refreshKeys() {
       try {
         const k = await fetch('/admin/keys').then(r => r.json());
@@ -756,7 +862,7 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
       } catch { document.getElementById('audit-err').textContent = 'Audit log tidak tersedia'; }
     }
 
-    function refresh() { refreshPool(); refreshQueue(); refreshSessions(); refreshSchedules(); refreshMetrics(); refreshKeys(); refreshAudit(); }
+    function refresh() { refreshPool(); refreshQueue(); refreshSessions(); refreshSchedules(); refreshMetrics(); refreshSse(); refreshKeys(); refreshAudit(); }
     refresh();
     setInterval(refresh, 3000);
   </script>

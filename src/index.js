@@ -13,8 +13,15 @@ import { AlertManager } from './metrics/AlertManager.js';
 import { KeyStore } from './security/KeyStore.js';
 import { AuditLogger } from './security/AuditLogger.js';
 import { KeyRateLimiter } from './security/KeyRateLimiter.js';
+import { EventBus } from './events/EventBus.js';
+import { SseManager } from './events/SseManager.js';
 
 const config = loadConfig();
+
+// ── Phase 10: SSE Event Bus ───────────────────────────────────────────────────
+const eventBus  = new EventBus();
+const sseManager = new SseManager();
+console.log('[EventBus] Aktif — SSE endpoint: GET /events');
 
 // ── Phase 9: Auth, Audit, Rate Limit ─────────────────────────────────────────
 const keyStore = new KeyStore({
@@ -22,7 +29,7 @@ const keyStore = new KeyStore({
   keys: config.server.apiKeys,
 });
 
-const auditLogger = config.auditLog.enabled ? new AuditLogger({ maxSize: config.auditLog.maxSize }) : null;
+const auditLogger = config.auditLog.enabled ? new AuditLogger({ maxSize: config.auditLog.maxSize, eventBus }) : null;
 
 const rateLimiter = config.rateLimit.enabled
   ? new KeyRateLimiter({ rpm: config.rateLimit.rpm, rph: config.rateLimit.rph })
@@ -75,14 +82,14 @@ if (config.redis && dataStore) {
       console.log('[MQTT] Publisher inisialisasi →', config.mqtt.brokerUrl);
     }
     // AlertManager dibuat setelah mqttPublisher tersedia agar bisa publish alert
-    alertManager = new AlertManager(config.alerting, { mqttPublisher });
-    jobQueue = new JobQueue(config.redis, { pool, manager: browser, dataStore, sessionStore, mqttPublisher, metrics, alertManager });
+    alertManager = new AlertManager(config.alerting, { mqttPublisher, eventBus });
+    jobQueue = new JobQueue(config.redis, { pool, manager: browser, dataStore, sessionStore, mqttPublisher, metrics, alertManager, eventBus });
     console.log('[JobQueue] BullMQ worker aktif');
   }
 }
 
 // Jika tidak ada pool/Redis, tetap buat alertManager (tanpa MQTT, untuk endpoint /monitor/metrics)
-if (!alertManager) alertManager = new AlertManager(config.alerting);
+if (!alertManager) alertManager = new AlertManager(config.alerting, { eventBus });
 
 // Scheduler — inisialisasi setelah scraper tersedia
 let scheduler = null;
@@ -95,7 +102,7 @@ if (scheduleStore && dataStore) {
   await scheduler.start();
 }
 
-const server = createServer(config, { browser, dataStore, sessionStore, scheduleStore, jobQueue, pool, scheduler, metrics, alertManager, keyStore, auditLogger, rateLimiter });
+const server = createServer(config, { browser, dataStore, sessionStore, scheduleStore, jobQueue, pool, scheduler, metrics, alertManager, keyStore, auditLogger, rateLimiter, eventBus, sseManager });
 
 try {
   await server.listen({ host: config.server.host, port: config.server.port });
@@ -107,6 +114,7 @@ try {
   if (!keyStore.isEmpty()) console.log('[Auth] API key aktif — semua endpoint dilindungi Bearer token');
   if (rateLimiter) console.log(`[RateLimiter] ${config.rateLimit.rpm} RPM / ${config.rateLimit.rph} RPH per key`);
   if (auditLogger) console.log(`[AuditLogger] GET /admin/audit, GET /admin/audit/stats tersedia`);
+  console.log(`[SSE] GET /events tersedia — subscribe real-time job/alert events`);
 } catch (error) {
   server.log.error(error);
   process.exit(1);

@@ -30,12 +30,14 @@ export class JobQueue {
   #mqtt;         // MqttPublisher | null
   #metrics;      // MetricsCollector | null
   #alertManager; // AlertManager | null
+  #eventBus;     // EventBus | null
 
-  constructor(redisConfig, { pool, manager, dataStore, sessionStore = null, mqttPublisher = null, metrics = null, alertManager = null }) {
+  constructor(redisConfig, { pool, manager, dataStore, sessionStore = null, mqttPublisher = null, metrics = null, alertManager = null, eventBus = null }) {
     this.#pool         = pool;
     this.#mqtt         = mqttPublisher;
     this.#metrics      = metrics;
     this.#alertManager = alertManager;
+    this.#eventBus     = eventBus;
 
     this.#queue = new Queue(QUEUE_NAME, { connection: redisConfig });
 
@@ -80,6 +82,7 @@ export class JobQueue {
     }
 
     await dataStore.updateJob(jobId, { status: 'running' });
+    this.#eventBus?.publish('job.started', { jobId, platform, targetUrl, ts: Date.now() });
 
     try {
       try {
@@ -133,6 +136,13 @@ export class JobQueue {
         profile: profile?.username ?? null,
         timestamp: Date.now(),
       };
+      this.#eventBus?.publish('job.completed', {
+        jobId, platform, targetUrl,
+        postCount: posts.length,
+        profile: profile?.username ?? null,
+        durationSec: Math.round(durationSec * 10) / 10,
+        ts: Date.now(),
+      });
       await Promise.all([
         webhook.fire(webhookUrl, donePayload),
         this.#mqtt?.publish(jobId, donePayload),
@@ -140,6 +150,7 @@ export class JobQueue {
     } catch (err) {
       if (isFinal) {
         await dataStore.updateJob(jobId, { status: 'failed', error: err.message });
+        this.#eventBus?.publish('job.failed', { jobId, platform, targetUrl, error: err.message, ts: Date.now() });
         const failPayload = { jobId, platform, targetUrl, status: 'failed', error: err.message, timestamp: Date.now() };
         await Promise.all([
           webhook.fire(webhookUrl, failPayload),
@@ -149,6 +160,7 @@ export class JobQueue {
         await this.#alertManager?.recordFailure(platform, { jobId, error: err.message });
       } else {
         this.#metrics?.inc('scraper_retries_total', { platform });
+        this.#eventBus?.publish('job.retry', { jobId, platform, attempt: bullJob.attemptsMade + 1, ts: Date.now() });
       }
       throw err;
     } finally {
@@ -164,6 +176,7 @@ export class JobQueue {
       { ...DEFAULT_JOB_OPTS, ...opts }
     );
     this.#metrics?.inc('scraper_jobs_total', { platform, status: 'submitted' });
+    this.#eventBus?.publish('job.queued', { jobId, platform, targetUrl, ts: Date.now() });
     return bullJob.id;
   }
 

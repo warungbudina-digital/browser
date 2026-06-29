@@ -7,9 +7,11 @@
 export class AuditLogger {
   #entries = [];
   #maxSize;
+  #eventBus; // EventBus | null — null by default untuk hindari noise tinggi
 
-  constructor({ maxSize = 5000 } = {}) {
-    this.#maxSize = maxSize;
+  constructor({ maxSize = 5000, eventBus = null } = {}) {
+    this.#maxSize  = maxSize;
+    this.#eventBus = eventBus;
   }
 
   /**
@@ -17,9 +19,14 @@ export class AuditLogger {
    * @param {{ keyName?: string, method: string, path: string, status: number, durationMs: number, ip?: string, error?: string }} entry
    */
   log(entry) {
-    this.#entries.push({ ts: Date.now(), ...entry });
+    const full = { ts: Date.now(), ...entry };
+    this.#entries.push(full);
     if (this.#entries.length > this.#maxSize) {
       this.#entries.splice(0, this.#entries.length - this.#maxSize);
+    }
+    // Hanya emit ke SSE jika ada error (status >= 400) — hindari banjir event untuk request OK
+    if (this.#eventBus && full.status >= 400) {
+      this.#eventBus.publish('audit.error', full);
     }
   }
 
