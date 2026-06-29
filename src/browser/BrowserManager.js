@@ -38,7 +38,8 @@ export class BrowserManager {
       actions: ['status', 'start', 'stop', 'tabs', 'open', 'navigate', 'focus', 'close', 'snapshot', 'snapdiff', 'extract', 'screenshot', 'pdf', 'upload', 'download', 'trace', 'console', 'errors', 'requests', 'dialog', 'warmup', 'cookies', 'act'],
       extractKinds:  ['text', 'meta', 'links', 'full'],
       scriptActions:  ['script-save', 'script-list', 'script-get', 'script-delete', 'script-run'],
-      sessionActions: ['session-save', 'session-load', 'session-list', 'session-delete'],
+      sessionActions:   ['session-save', 'session-load', 'session-list', 'session-delete'],
+      interceptActions: ['intercept-add', 'intercept-list', 'intercept-remove', 'intercept-clear'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -157,10 +158,14 @@ export class BrowserManager {
       case 'warmup': return service.warmup();
       case 'cookies': return service.cookies(payload);
       case 'act':            return service.act({ targetId: payload.targetId, request: payload.request });
-      case 'session-save':   return service.sessionSave(payload);
-      case 'session-load':   return service.sessionLoad(payload);
-      case 'session-list':   return service.sessionList();
-      case 'session-delete': return service.sessionDelete(payload);
+      case 'session-save':      return service.sessionSave(payload);
+      case 'session-load':      return service.sessionLoad(payload);
+      case 'session-list':      return service.sessionList();
+      case 'session-delete':    return service.sessionDelete(payload);
+      case 'intercept-add':    return service.interceptAdd(payload);
+      case 'intercept-list':   return service.interceptList();
+      case 'intercept-remove': return service.interceptRemove(payload);
+      case 'intercept-clear':  return service.interceptClear();
       default:
         throw new Error(`Unsupported action: ${action}`);
     }

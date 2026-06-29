@@ -16,6 +16,7 @@ import {
   sessionFilename, serializeSession, parseSessionFile, filterExpiredCookies,
 } from './SessionPersistence.js';
 import { assertBrowserNavigationAllowed, assertBrowserNavigationResultAllowed, assertCdpEndpointAllowed } from '../security/ssrf.js';
+import { InterceptManager, matchesPattern } from './InterceptManager.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -43,6 +44,8 @@ export class BrowserService {
     this.startedAt = null;
     this.logs = new Map();
     this.traceState = { active: false, options: null };
+    this.interceptManager = new InterceptManager();
+    this.interceptorInstalled = false;
   }
 
   async start() {
@@ -683,5 +686,52 @@ export class BrowserService {
     } catch {
       // best-effort
     }
+  }
+
+  // ── Request Interception (Phase 20) ─────────────────────────────────────────
+
+  async interceptAdd({ pattern, action, response, priority } = {}) {
+    await this.start();
+    const rule = this.interceptManager.add({ pattern, action, response, priority });
+    await this.#ensureInterceptorInstalled();
+    return { ok: true, profileName: this.profileName, rule };
+  }
+
+  async interceptList() {
+    return { ok: true, profileName: this.profileName, rules: this.interceptManager.list() };
+  }
+
+  async interceptRemove({ id } = {}) {
+    const removed = this.interceptManager.remove(id);
+    return { ok: true, profileName: this.profileName, removed };
+  }
+
+  async interceptClear() {
+    this.interceptManager.clear();
+    if (this.context && this.interceptorInstalled) {
+      await this.context.unrouteAll?.().catch(() => {});
+      this.interceptorInstalled = false;
+    }
+    return { ok: true, profileName: this.profileName };
+  }
+
+  async #ensureInterceptorInstalled() {
+    if (this.interceptorInstalled) return;
+    this.interceptorInstalled = true;
+    await this.context.route('**/*', async (route) => {
+      const url  = route.request().url();
+      const rule = this.interceptManager.match(url);
+      if (!rule || rule.action === 'passthrough') return route.continue();
+      if (rule.action === 'block') return route.abort('blockedbyclient');
+      if (rule.action === 'mock' && rule.response) {
+        const { status = 200, contentType = 'application/json', body = '' } = rule.response;
+        return route.fulfill({
+          status,
+          contentType,
+          body: typeof body === 'string' ? body : JSON.stringify(body),
+        });
+      }
+      return route.continue();
+    });
   }
 }
