@@ -97,10 +97,10 @@ const profileSchema = z.object({
   }).optional()
 });
 
-export function createServer(config, { dataStore } = {}) {
+export function createServer(config, { browser: injectedBrowser, dataStore, jobQueue = null, pool = null } = {}) {
   const app = Fastify({ logger: true });
-  const browser = new BrowserManager(config.browser);
-  const scraper = dataStore ? new ScraperService(browser, dataStore) : null;
+  const browser = injectedBrowser ?? new BrowserManager(config.browser);
+  const scraper = dataStore ? new ScraperService(browser, dataStore, jobQueue) : null;
 
   app.get('/health', async () => ({ ok: true }));
   app.get('/browser/capabilities', async () => browser.capabilities());
@@ -242,6 +242,128 @@ export function createServer(config, { dataStore } = {}) {
       metrics: ['engagement', 'top_posts', 'hashtags', 'frequency', 'profile_history', 'platform_summary']
     }));
   }
+
+  // ─────────────────────────────────────────────
+  // Monitor API (tersedia hanya jika pool / queue dikonfigurasi)
+  // ─────────────────────────────────────────────
+
+  app.get('/monitor/health', async () => ({
+    ok:    true,
+    pool:  pool ? pool.status() : null,
+    queue: jobQueue ? await jobQueue.stats().catch(() => null) : null,
+    db:    dataStore ? 'connected' : 'disabled',
+  }));
+
+  if (pool) {
+    app.get('/monitor/pool', async () => pool.status());
+  }
+
+  if (jobQueue) {
+    app.get('/monitor/queue', async (_, reply) => {
+      try {
+        return await jobQueue.stats();
+      } catch (err) {
+        reply.code(500);
+        return { error: err.message };
+      }
+    });
+  }
+
+  // ─────────────────────────────────────────────
+  // Admin Dashboard HTML
+  // ─────────────────────────────────────────────
+
+  app.get('/admin', async (_, reply) => {
+    reply.type('text/html');
+    return `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Browser Scraper — Monitor</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:ui-monospace,monospace;background:#0d1117;color:#c9d1d9;padding:20px}
+    h1{color:#58a6ff;font-size:16px;margin-bottom:16px}
+    .card{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:16px;margin:12px 0}
+    .card h2{color:#79c0ff;font-size:13px;margin-bottom:12px;display:flex;justify-content:space-between}
+    .card h2 span{color:#8b949e;font-size:11px;font-weight:normal}
+    .metrics{display:flex;flex-wrap:wrap;gap:16px}
+    .metric .label{color:#8b949e;font-size:11px}
+    .metric .value{font-size:28px;font-weight:bold;line-height:1.2}
+    .busy{color:#f85149}.free{color:#3fb950}.warn{color:#e3b341}
+    .slots{margin-top:10px;display:flex;flex-wrap:wrap;gap:4px}
+    .slot{padding:4px 10px;border-radius:4px;font-size:12px;line-height:1.6}
+    .slot.busy{background:#3d1f1e;border:1px solid #f85149;color:#f85149}
+    .slot.free{background:#1a2e1a;border:1px solid #3fb950;color:#3fb950}
+    .slot small{display:block;font-size:10px;opacity:.7}
+    .err{color:#f85149;font-size:12px;margin-top:8px}
+  </style>
+</head>
+<body>
+  <h1>Browser Scraper — Monitor</h1>
+
+  <div class="card">
+    <h2>Browser Pool <span id="ts-pool"></span></h2>
+    <div class="metrics" id="pool-metrics"></div>
+    <div class="slots"   id="pool-slots"></div>
+    <div class="err"     id="pool-err"></div>
+  </div>
+
+  <div class="card">
+    <h2>Job Queue (BullMQ) <span id="ts-queue"></span></h2>
+    <div class="metrics" id="queue-metrics"></div>
+    <div class="err"     id="queue-err"></div>
+  </div>
+
+  <script>
+    const now = () => new Date().toLocaleTimeString();
+    function metric(label, value, cls='') {
+      return '<div class="metric"><div class="label">'+label+'</div><div class="value '+cls+'">'+value+'</div></div>';
+    }
+
+    async function refreshPool() {
+      try {
+        const p = await fetch('/monitor/pool').then(r => r.json());
+        document.getElementById('ts-pool').textContent = now();
+        document.getElementById('pool-err').textContent = '';
+        document.getElementById('pool-metrics').innerHTML =
+          metric('Size',   p.size)  +
+          metric('Busy',   p.busy,           'busy') +
+          metric('Free',   p.size - p.busy,  'free');
+        document.getElementById('pool-slots').innerHTML = p.slots.map(s =>
+          '<div class="slot '+(s.busy?'busy':'free')+'">'+s.profile+
+          (s.jobId ? '<small>'+s.jobId.slice(0,8)+'…</small>' : '')+
+          '</div>'
+        ).join('');
+      } catch(e) {
+        document.getElementById('pool-err').textContent = 'Pool tidak tersedia';
+      }
+    }
+
+    async function refreshQueue() {
+      try {
+        const q = await fetch('/monitor/queue').then(r => r.json());
+        document.getElementById('ts-queue').textContent = now();
+        document.getElementById('queue-err').textContent = '';
+        document.getElementById('queue-metrics').innerHTML =
+          metric('Waiting',   q.waiting,   q.waiting   > 10 ? 'warn' : '') +
+          metric('Active',    q.active,    'free')  +
+          metric('Completed', q.completed, '')       +
+          metric('Failed',    q.failed,    q.failed > 0 ? 'busy' : '') +
+          metric('Delayed',   q.delayed,   '');
+      } catch(e) {
+        document.getElementById('queue-err').textContent = 'Queue tidak tersedia';
+      }
+    }
+
+    function refresh() { refreshPool(); refreshQueue(); }
+    refresh();
+    setInterval(refresh, 3000);
+  </script>
+</body>
+</html>`;
+  });
 
   return app;
 }

@@ -27,6 +27,8 @@ export function loadConfig(env = process.env) {
 
   const dbEnabled = bool(env.DB_ENABLED, false);
 
+  const redisEnabled = bool(env.REDIS_ENABLED, false);
+
   return {
     db: dbEnabled ? {
       host:     env.DB_HOST     || 'postgres',
@@ -35,6 +37,15 @@ export function loadConfig(env = process.env) {
       user:     env.DB_USER     || 'scraper',
       password: env.DB_PASSWORD || ''
     } : null,
+    redis: redisEnabled ? {
+      host:     env.REDIS_HOST     || 'redis',
+      port:     number(env.REDIS_PORT, 6379),
+      password: env.REDIS_PASSWORD || undefined,
+    } : null,
+    pool: {
+      size:          number(env.BROWSER_POOL_SIZE, 3),
+      profilePrefix: env.BROWSER_POOL_PREFIX || 'pool',
+    },
     server: {
       port: number(env.PORT, 8080),
       host: env.HOST || '0.0.0.0'

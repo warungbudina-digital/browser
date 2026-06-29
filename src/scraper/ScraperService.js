@@ -3,7 +3,7 @@ import { InstagramScraper } from './platforms/instagram.js';
 import { TikTokScraper }    from './platforms/tiktok.js';
 import { TwitterScraper }   from './platforms/twitter.js';
 
-const SCRAPERS = {
+export const SCRAPERS = {
   instagram: new InstagramScraper(),
   tiktok:    new TikTokScraper(),
   twitter:   new TwitterScraper(),
@@ -14,14 +14,18 @@ export const SUPPORTED_PLATFORMS = Object.keys(SCRAPERS);
 export class ScraperService {
   #manager;
   #store;
+  #queue; // optional JobQueue — jika ada, submit via BullMQ; jika tidak, jalankan in-process
 
-  constructor(browserManager, dataStore) {
+  constructor(browserManager, dataStore, jobQueue = null) {
     this.#manager = browserManager;
     this.#store   = dataStore;
+    this.#queue   = jobQueue;
   }
 
   /**
-   * Submit job scraping — langsung return jobId, eksekusi async di background.
+   * Submit job scraping — langsung return jobId.
+   * Jika JobQueue tersedia: masukkan ke queue BullMQ (persistent, retry).
+   * Fallback: jalankan async in-process (Phase 3 behavior).
    */
   async submit({ platform, targetUrl, profileName = 'openclaw', options = {} }) {
     if (!SCRAPERS[platform]) {
@@ -32,8 +36,11 @@ export class ScraperService {
     const id = crypto.randomUUID();
     await this.#store.saveJob({ id, platform, targetUrl, profileName, status: 'pending' });
 
-    // Jalankan async — jangan await di sini
-    this.#run(id, platform, targetUrl, profileName, options).catch(() => {});
+    if (this.#queue) {
+      await this.#queue.add({ jobId: id, platform, targetUrl, options });
+    } else {
+      this.#run(id, platform, targetUrl, profileName, options).catch(() => {});
+    }
 
     return { id, platform, targetUrl, profileName, status: 'pending' };
   }
