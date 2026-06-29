@@ -1,5 +1,6 @@
 import { loadConfig } from './config.js';
 import { createServer } from './server.js';
+import { shutdown } from './Shutdown.js';
 import { BrowserManager } from './browser/BrowserManager.js';
 import { BrowserPool } from './browser/BrowserPool.js';
 import { DataStore } from './scraper/DataStore.js';
@@ -104,6 +105,9 @@ if (scheduleStore && dataStore) {
 
 const server = createServer(config, { browser, dataStore, sessionStore, scheduleStore, jobQueue, pool, scheduler, metrics, alertManager, keyStore, auditLogger, rateLimiter, eventBus, sseManager });
 
+// ── MQTT publisher (needed for shutdown services map) ─────────────────────────
+let mqttPublisher = null; // may have been set inside the redis/pool block above
+
 try {
   await server.listen({ host: config.server.host, port: config.server.port });
   console.log(`full-tool-browser listening on http://${config.server.host}:${config.server.port}`);
@@ -119,3 +123,17 @@ try {
   server.log.error(error);
   process.exit(1);
 }
+
+// ── Graceful shutdown ─────────────────────────────────────────────────────────
+const shutdownServices = { server, sseManager, scheduler, jobQueue, pool, browser, dataStore, mqttPublisher };
+
+let isShuttingDown = false;
+async function handleShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  const result = await shutdown(shutdownServices, { signal, timeoutMs: 30_000 });
+  process.exit(result.ok ? 0 : 1);
+}
+
+process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+process.on('SIGINT',  () => handleShutdown('SIGINT'));

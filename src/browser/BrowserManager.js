@@ -166,6 +166,13 @@ export class BrowserManager {
     }
   }
 
+  /** Stop semua active browser services — dipanggil saat graceful shutdown. */
+  async stopAll() {
+    const names = [...this.services.keys()];
+    await Promise.allSettled(names.map((n) => this.stop(n)));
+    return { ok: true, stopped: names.length };
+  }
+
   async stop(name) {
     const service = this.services.get(name);
     if (!service) return { ok: true, stopped: false, profileName: name };

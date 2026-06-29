@@ -80,6 +80,16 @@ export class SseManager {
     }
   }
 
+  /** Tutup semua koneksi aktif — dipanggil saat graceful shutdown. */
+  closeAll() {
+    for (const { unsub, timer, reply } of this.#connections) {
+      try { unsub(); }       catch { /* ignore */ }
+      try { clearInterval(timer); } catch { /* ignore */ }
+      try { reply.raw.end(); }  catch { /* ignore */ }
+    }
+    this.#connections.clear();
+  }
+
   status() {
     return { connections: this.#connections.size };
   }
