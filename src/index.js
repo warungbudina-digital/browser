@@ -5,6 +5,7 @@ import { BrowserPool } from './browser/BrowserPool.js';
 import { DataStore } from './scraper/DataStore.js';
 import { SessionStore } from './scraper/SessionStore.js';
 import { JobQueue } from './queue/JobQueue.js';
+import { MqttPublisher } from './mqtt/MqttPublisher.js';
 
 const config = loadConfig();
 
@@ -38,7 +39,12 @@ if (config.redis && dataStore) {
   }
 
   if (pool) {
-    jobQueue = new JobQueue(config.redis, { pool, manager: browser, dataStore, sessionStore });
+    let mqttPublisher = null;
+    if (config.mqtt) {
+      mqttPublisher = new MqttPublisher(config.mqtt);
+      console.log('[MQTT] Publisher inisialisasi →', config.mqtt.brokerUrl);
+    }
+    jobQueue = new JobQueue(config.redis, { pool, manager: browser, dataStore, sessionStore, mqttPublisher });
     console.log('[JobQueue] BullMQ worker aktif');
   }
 }

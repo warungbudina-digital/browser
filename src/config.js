@@ -42,6 +42,12 @@ export function loadConfig(env = process.env) {
       port:     number(env.REDIS_PORT, 6379),
       password: env.REDIS_PASSWORD || undefined,
     } : null,
+    mqtt: bool(env.MQTT_ENABLED, false) ? {
+      brokerUrl:   env.MQTT_BROKER_URL  || 'mqtt://10.10.0.1:1883',
+      username:    env.MQTT_USERNAME    || undefined,
+      password:    env.MQTT_PASSWORD    || undefined,
+      topicPrefix: env.MQTT_TOPIC_PREFIX || 'scraper/results',
+    } : null,
     pool: {
       size:          number(env.BROWSER_POOL_SIZE, 3),
       profilePrefix: env.BROWSER_POOL_PREFIX || 'pool',

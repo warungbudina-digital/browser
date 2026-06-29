@@ -1,6 +1,7 @@
 import { Queue, Worker, QueueEvents } from 'bullmq';
 import { SCRAPERS } from '../scraper/ScraperService.js';
 import { WebhookManager } from '../webhook/WebhookManager.js';
+// mqttPublisher diinject dari luar — null jika MQTT tidak dikonfigurasi
 
 const QUEUE_NAME = 'scraper';
 
@@ -26,8 +27,11 @@ export class JobQueue {
   #events;
   #pool;
 
-  constructor(redisConfig, { pool, manager, dataStore, sessionStore = null }) {
+  #mqtt; // MqttPublisher | null
+
+  constructor(redisConfig, { pool, manager, dataStore, sessionStore = null, mqttPublisher = null }) {
     this.#pool = pool;
+    this.#mqtt = mqttPublisher;
 
     this.#queue = new Queue(QUEUE_NAME, { connection: redisConfig });
 
@@ -57,7 +61,11 @@ export class JobQueue {
     } catch (err) {
       if (isFinal) {
         await dataStore.updateJob(jobId, { status: 'failed', error: err.message });
-        await webhook.fire(webhookUrl, { jobId, platform, status: 'failed', error: err.message });
+        const failPayload = { jobId, platform, status: 'failed', error: err.message, timestamp: Date.now() };
+        await Promise.all([
+          webhook.fire(webhookUrl, failPayload),
+          this.#mqtt?.publish(jobId, failPayload),
+        ]);
       }
       throw err;
     }
@@ -105,15 +113,24 @@ export class JobQueue {
         }
       }
 
-      await webhook.fire(webhookUrl, {
+      const donePayload = {
         jobId, platform, targetUrl, status: 'done',
         postCount: posts.length,
         profile: profile?.username ?? null,
-      });
+        timestamp: Date.now(),
+      };
+      await Promise.all([
+        webhook.fire(webhookUrl, donePayload),
+        this.#mqtt?.publish(jobId, donePayload),
+      ]);
     } catch (err) {
       if (isFinal) {
         await dataStore.updateJob(jobId, { status: 'failed', error: err.message });
-        await webhook.fire(webhookUrl, { jobId, platform, targetUrl, status: 'failed', error: err.message });
+        const failPayload = { jobId, platform, targetUrl, status: 'failed', error: err.message, timestamp: Date.now() };
+        await Promise.all([
+          webhook.fire(webhookUrl, failPayload),
+          this.#mqtt?.publish(jobId, failPayload),
+        ]);
       }
       throw err;
     } finally {
