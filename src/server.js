@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import Fastify from 'fastify';
 import { z } from 'zod';
 import { BrowserManager } from './browser/BrowserManager.js';
@@ -7,11 +8,16 @@ import { createApiKeyHook } from './middleware/apiKey.js';
 import { createAuditHooks } from './middleware/auditHook.js';
 import { createRateLimitHook } from './middleware/rateLimitHook.js';
 import { createWorkspaceHook } from './middleware/workspaceHook.js';
+import { createCorrelationIdHook } from './middleware/correlationId.js';
 import {
   EXPORT_FORMATS, EXPORT_TYPES,
   queryPosts, queryProfiles, queryJobs,
   serialize, contentType as exportContentType, filename as exportFilename,
 } from './scraper/Exporter.js';
+
+const { version: APP_VERSION } = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8')
+);
 
 const actRequestSchema = z.lazy(() => z.object({
   kind: z.string(),
@@ -108,12 +114,15 @@ const profileSchema = z.object({
 });
 
 export function createServer(config, { browser: injectedBrowser, dataStore, sessionStore = null, scheduleStore = null, jobQueue = null, pool = null, scheduler = null, metrics = null, alertManager = null, keyStore = null, auditLogger = null, rateLimiter = null, eventBus = null, sseManager = null } = {}) {
-  const app = Fastify({ logger: true });
-  const browser = injectedBrowser ?? new BrowserManager(config.browser);
-  const scraper = dataStore ? new ScraperService(browser, dataStore, jobQueue) : null;
+  const app       = Fastify({ logger: true });
+  const browser   = injectedBrowser ?? new BrowserManager(config.browser);
+  const scraper   = dataStore ? new ScraperService(browser, dataStore, jobQueue) : null;
+  const startedAt = new Date().toISOString();
+
+  // ── Correlation ID (harus pertama — sebelum semua hook lain) ─────────────
+  app.addHook('onRequest', createCorrelationIdHook());
 
   // ── API key auth ─────────────────────────────────────────────────────────
-  // Gunakan KeyStore jika tersedia, fallback ke legacy string key
   const apiKeyHook = keyStore
     ? createApiKeyHook(keyStore)
     : createApiKeyHook(config.server?.apiKey);
@@ -604,14 +613,42 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
   // Monitor API (tersedia hanya jika pool / queue dikonfigurasi)
   // ─────────────────────────────────────────────
 
+  // Liveness — process is running (used by container orchestrator restart policy)
+  app.get('/monitor/live', async () => ({ ok: true, ts: new Date().toISOString() }));
+
+  // Readiness — all required dependencies are reachable (used by load-balancer)
+  app.get('/monitor/ready', async (_, reply) => {
+    const checks = {};
+    let ready    = true;
+
+    if (dataStore) {
+      try {
+        await dataStore.pool.query('SELECT 1');
+        checks.db = 'ok';
+      } catch (err) {
+        checks.db = `error: ${err.message}`;
+        ready = false;
+      }
+    } else {
+      checks.db = 'disabled';
+    }
+
+    if (!ready) reply.code(503);
+    return { ok: ready, checks, ts: new Date().toISOString() };
+  });
+
   app.get('/monitor/health', async () => ({
-    ok:        true,
-    pool:      pool         ? pool.status()                            : null,
-    queue:     jobQueue     ? await jobQueue.stats().catch(() => null) : null,
-    scheduler: scheduler    ? scheduler.status()                       : null,
-    alerts:    alertManager ? alertManager.status()                    : null,
-    db:        dataStore    ? 'connected'                              : 'disabled',
-    sse:       sseManager   ? sseManager.status()                      : null,
+    ok:             true,
+    version:        APP_VERSION,
+    startedAt,
+    uptimeSeconds:  Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000),
+    pid:            process.pid,
+    pool:           pool         ? pool.status()                            : null,
+    queue:          jobQueue     ? await jobQueue.stats().catch(() => null) : null,
+    scheduler:      scheduler    ? scheduler.status()                       : null,
+    alerts:         alertManager ? alertManager.status()                    : null,
+    db:             dataStore    ? 'connected'                              : 'disabled',
+    sse:            sseManager   ? sseManager.status()                      : null,
   }));
 
   if (pool) {

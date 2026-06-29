@@ -1,6 +1,7 @@
 import { loadConfig } from './config.js';
 import { createServer } from './server.js';
 import { shutdown } from './Shutdown.js';
+import { validateAndLog } from './ConfigValidator.js';
 import { BrowserManager } from './browser/BrowserManager.js';
 import { BrowserPool } from './browser/BrowserPool.js';
 import { DataStore } from './scraper/DataStore.js';
@@ -16,6 +17,14 @@ import { AuditLogger } from './security/AuditLogger.js';
 import { KeyRateLimiter } from './security/KeyRateLimiter.js';
 import { EventBus } from './events/EventBus.js';
 import { SseManager } from './events/SseManager.js';
+
+// ── Config validation — fail fast before any service starts ──────────────────
+const validation = validateAndLog(process.env);
+if (!validation.valid) {
+  console.error('[Config] Startup dibatalkan karena config tidak valid:');
+  for (const e of validation.errors) console.error(`  • ${e}`);
+  process.exit(1);
+}
 
 const config = loadConfig();
 
