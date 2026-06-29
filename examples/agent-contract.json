@@ -1,0 +1,18 @@
+{
+  "tool": "browser",
+  "requestEndpoint": "/browser/request",
+  "profileEndpoint": "/browser/profiles",
+  "recommendedWorkflow": [
+    "GET /browser/capabilities",
+    "POST /browser/request {\"action\":\"start\"}",
+    "POST /browser/request {\"action\":\"open\",\"url\":\"https://example.com\"}",
+    "POST /browser/request {\"action\":\"snapshot\",\"interactive\":true}",
+    "POST /browser/request {\"action\":\"act\",\"request\":{\"kind\":\"click\",\"ref\":\"e1\"}}"
+  ],
+  "notes": [
+    "Extra actions available: upload, download, trace.",
+    "Always re-run snapshot after navigation before using refs again.",
+    "Use profile=create/update/select for remote CDP targets.",
+    "SSRF policy may block private-network navigation/CDP until allowlisted."
+  ]
+}

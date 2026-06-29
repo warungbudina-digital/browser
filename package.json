@@ -1,0 +1,23 @@
+{
+  "name": "full-tool-browser",
+  "version": "0.2.0",
+  "description": "Standalone OpenClaw-like browser control surface with SSRF policy and remote CDP profile management.",
+  "type": "module",
+  "bin": {
+    "full-tool-browser": "./src/cli.js"
+  },
+  "scripts": {
+    "dev": "node ./src/index.js",
+    "start": "node ./src/index.js",
+    "test": "node --test",
+    "lint": "node --check ./src/index.js && node --check ./src/cli.js && node --check ./src/server.js && node --check ./src/config.js && node --check ./src/browser/BrowserService.js && node --check ./src/browser/BrowserManager.js && node --check ./src/browser/ProfileStore.js && node --check ./src/browser/RefStore.js && node --check ./src/browser/snapshot.js && node --check ./src/security/ssrf.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "fastify": "^5.0.0",
+    "playwright": "^1.54.0",
+    "zod": "^3.23.8"
+  }
+}

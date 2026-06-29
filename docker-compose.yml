@@ -1,0 +1,17 @@
+services:
+  full-tool-browser:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      HOST: 0.0.0.0
+      BROWSER_DEFAULT_PROFILE: openclaw
+      BROWSER_HEADLESS: "true"
+      BROWSER_PROFILES_ROOT_DIR: /data/profiles
+      BROWSER_ARTIFACT_DIR: /data/artifacts
+      BROWSER_STATE_DIR: /data/state
+    volumes:
+      - ./data/profiles:/data/profiles
+      - ./data/artifacts:/data/artifacts
+      - ./data/state:/data/state

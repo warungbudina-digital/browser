@@ -1,0 +1,11 @@
+{
+  "activeProfile": "openclaw",
+  "profiles": {
+    "openclaw": {
+      "driver": "managed",
+      "headless": true,
+      "profileDir": "/home/node/.openclaw/workspace/full-tool-browser/profiles/openclaw",
+      "color": "#FF4500"
+    }
+  }
+}
