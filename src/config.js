@@ -25,7 +25,16 @@ export function loadConfig(env = process.env) {
   const profilesRootDir = path.resolve(env.BROWSER_PROFILES_ROOT_DIR || path.join(baseDir, 'profiles'));
   const defaultProfile = env.BROWSER_DEFAULT_PROFILE || 'openclaw';
 
+  const dbEnabled = bool(env.DB_ENABLED, false);
+
   return {
+    db: dbEnabled ? {
+      host:     env.DB_HOST     || 'postgres',
+      port:     number(env.DB_PORT, 5432),
+      database: env.DB_NAME     || 'scraper',
+      user:     env.DB_USER     || 'scraper',
+      password: env.DB_PASSWORD || ''
+    } : null,
     server: {
       port: number(env.PORT, 8080),
       host: env.HOST || '0.0.0.0'

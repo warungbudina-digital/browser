@@ -1,4 +1,37 @@
 services:
+
+  # ────────────────────────────────────────────
+  # PostgreSQL — scraper data storage
+  # ────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: scraper-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       scraper
+      POSTGRES_USER:     scraper
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      PGDATA:            /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scraper -d scraper"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.5"
+        reservations:
+          memory: 128m
+
+  # ────────────────────────────────────────────
+  # Browser automation + scraper API
+  # ────────────────────────────────────────────
   full-tool-browser:
     build: .
     ports:
@@ -12,12 +45,19 @@ services:
       BROWSER_ARTIFACT_DIR: /data/artifacts
       BROWSER_STATE_DIR: /data/state
       BROWSER_STEALTH: "true"
+      # ── Database (scraper API) ─────────────────
+      DB_ENABLED:   "true"
+      DB_HOST:      postgres
+      DB_PORT:      "5432"
+      DB_NAME:      scraper
+      DB_USER:      scraper
+      DB_PASSWORD:  ${DB_PASSWORD}
+      # ── Proxy (opsional) ──────────────────────
       # BROWSER_PROXY_SERVER: "http://host:port"
       # BROWSER_PROXY_USERNAME: ""
       # BROWSER_PROXY_PASSWORD: ""
       # BROWSER_USER_AGENT: ""
     # DNS via PiHole di VPS CHR (aktif setelah WireGuard tunnel naik)
-    # Memblokir tracking/analytics domain sebelum browser menyentuhnya
     dns:
       - 10.10.0.1   # PiHole via WireGuard
       - 1.1.1.1     # Fallback jika WireGuard down
@@ -25,3 +65,9 @@ services:
       - ./data/profiles:/data/profiles
       - ./data/artifacts:/data/artifacts
       - ./data/state:/data/state
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
