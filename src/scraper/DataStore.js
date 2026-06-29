@@ -36,11 +36,11 @@ export class DataStore {
   // Job CRUD
   // ─────────────────────────────────────────────
 
-  async saveJob({ id, platform, targetUrl, profileName = 'openclaw', status = 'pending' }) {
+  async saveJob({ id, platform, targetUrl, profileName = 'openclaw', status = 'pending', webhookUrl = null }) {
     await this.#pool.query(
-      `INSERT INTO scraper_jobs (id, platform, target_url, profile_name, status)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [id, platform, targetUrl, profileName, status]
+      `INSERT INTO scraper_jobs (id, platform, target_url, profile_name, status, webhook_url)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [id, platform, targetUrl, profileName, status, webhookUrl]
     );
   }
 

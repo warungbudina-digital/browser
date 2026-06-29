@@ -1,14 +1,24 @@
 import { Queue, Worker, QueueEvents } from 'bullmq';
 import { SCRAPERS } from '../scraper/ScraperService.js';
+import { WebhookManager } from '../webhook/WebhookManager.js';
 
 const QUEUE_NAME = 'scraper';
 
 const DEFAULT_JOB_OPTS = {
   attempts:  3,
   backoff:   { type: 'exponential', delay: 8_000 },
-  removeOnComplete: { count: 200, age: 86_400 },    // simpan 200 job done, max 1 hari
-  removeOnFail:     { count: 500, age: 7 * 86_400 }, // simpan 500 fail, max 7 hari
+  removeOnComplete: { count: 200, age: 86_400 },
+  removeOnFail:     { count: 500, age: 7 * 86_400 },
 };
+
+// Domain root cookies per platform (untuk get/set cookies dari browser context)
+const PLATFORM_DOMAIN = {
+  instagram: '.instagram.com',
+  tiktok:    '.tiktok.com',
+  twitter:   '.twitter.com',
+};
+
+const webhook = new WebhookManager();
 
 export class JobQueue {
   #queue;
@@ -16,17 +26,17 @@ export class JobQueue {
   #events;
   #pool;
 
-  constructor(redisConfig, { pool, manager, dataStore }) {
+  constructor(redisConfig, { pool, manager, dataStore, sessionStore = null }) {
     this.#pool = pool;
 
     this.#queue = new Queue(QUEUE_NAME, { connection: redisConfig });
 
     this.#worker = new Worker(
       QUEUE_NAME,
-      async (bullJob) => this.#process(bullJob, manager, dataStore),
+      async (bullJob) => this.#process(bullJob, manager, dataStore, sessionStore),
       {
         connection:  redisConfig,
-        concurrency: pool.size,   // worker parallel = jumlah slot pool
+        concurrency: pool.size,
       }
     );
 
@@ -37,23 +47,24 @@ export class JobQueue {
     });
   }
 
-  async #process(bullJob, manager, dataStore) {
-    const { jobId, platform, targetUrl, options } = bullJob.data;
+  async #process(bullJob, manager, dataStore, sessionStore) {
+    const { jobId, platform, targetUrl, options, webhookUrl } = bullJob.data;
     const isFinal = bullJob.attemptsMade >= (bullJob.opts.attempts ?? 1) - 1;
 
-    // Acquire pool slot — timeout 90s (lebih dari satu halaman platform rata-rata)
     let slot;
     try {
       slot = await this.#pool.acquire(jobId, 90_000);
     } catch (err) {
-      if (isFinal) await dataStore.updateJob(jobId, { status: 'failed', error: err.message });
+      if (isFinal) {
+        await dataStore.updateJob(jobId, { status: 'failed', error: err.message });
+        await webhook.fire(webhookUrl, { jobId, platform, status: 'failed', error: err.message });
+      }
       throw err;
     }
 
     await dataStore.updateJob(jobId, { status: 'running' });
 
     try {
-      // Pastikan browser di slot ini berjalan (restart jika crash)
       try {
         await manager.dispatch('start', { profile: slot.profile });
       } catch {
@@ -64,31 +75,62 @@ export class JobQueue {
       const dispatch = (action, payload = {}) =>
         manager.dispatch(action, { ...payload, profile: slot.profile });
 
+      // ── Restore session cookies dari DB ke browser ──────────────────
+      if (sessionStore) {
+        const saved = await sessionStore.load(slot.profile, platform);
+        if (saved?.length) {
+          await dispatch('cookies', { kind: 'set', cookies: saved });
+        }
+      }
+
       const scraper = SCRAPERS[platform];
-      if (!scraper) throw new Error(`Scraper tidak ditemukan untuk platform: ${platform}`);
+      if (!scraper) throw new Error(`Scraper tidak ditemukan: ${platform}`);
 
       const { profile, posts } = await scraper.scrape(dispatch, targetUrl, options ?? {});
       await dataStore.saveResults(jobId, platform, { profile, posts });
-      // saveResults() sudah set status='done' di dalam transaksi
+
+      // ── Simpan cookies browser ke DB setelah scraping berhasil ──────
+      if (sessionStore) {
+        try {
+          const domain = PLATFORM_DOMAIN[platform];
+          const result = await dispatch('cookies', { kind: 'get', domain });
+          const cookies = result?.cookies ?? result ?? [];
+          if (Array.isArray(cookies) && cookies.length) {
+            // Expire session 30 hari dari sekarang
+            const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+            await sessionStore.save(slot.profile, platform, cookies, expires);
+          }
+        } catch (e) {
+          console.warn(`[JobQueue] Gagal simpan session ${slot.profile}/${platform}: ${e.message}`);
+        }
+      }
+
+      await webhook.fire(webhookUrl, {
+        jobId, platform, targetUrl, status: 'done',
+        postCount: posts.length,
+        profile: profile?.username ?? null,
+      });
     } catch (err) {
-      if (isFinal) await dataStore.updateJob(jobId, { status: 'failed', error: err.message });
-      throw err; // rethrow agar BullMQ bisa retry
+      if (isFinal) {
+        await dataStore.updateJob(jobId, { status: 'failed', error: err.message });
+        await webhook.fire(webhookUrl, { jobId, platform, targetUrl, status: 'failed', error: err.message });
+      }
+      throw err;
     } finally {
       this.#pool.release(slot);
     }
   }
 
-  /** Tambahkan job ke queue, return BullMQ job ID. */
-  async add({ jobId, platform, targetUrl, options }, opts = {}) {
+  /** Tambahkan job ke queue. webhookUrl disimpan di bullJob.data untuk diakses worker. */
+  async add({ jobId, platform, targetUrl, options, webhookUrl = null }, opts = {}) {
     const bullJob = await this.#queue.add(
       'scrape',
-      { jobId, platform, targetUrl, options },
+      { jobId, platform, targetUrl, options, webhookUrl },
       { ...DEFAULT_JOB_OPTS, ...opts }
     );
     return bullJob.id;
   }
 
-  /** Statistik queue dari Redis. */
   async stats() {
     const [waiting, active, completed, failed, delayed] = await Promise.all([
       this.#queue.getWaitingCount(),

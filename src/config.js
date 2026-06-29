@@ -47,8 +47,9 @@ export function loadConfig(env = process.env) {
       profilePrefix: env.BROWSER_POOL_PREFIX || 'pool',
     },
     server: {
-      port: number(env.PORT, 8080),
-      host: env.HOST || '0.0.0.0'
+      port:   number(env.PORT, 8080),
+      host:   env.HOST || '0.0.0.0',
+      apiKey: env.API_KEY || null, // null = mode open (development)
     },
     browser: {
       stateDir,

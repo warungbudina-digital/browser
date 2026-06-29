@@ -88,6 +88,8 @@ services:
       # ── Browser Pool ──────────────────────────
       BROWSER_POOL_SIZE:   "3"
       BROWSER_POOL_PREFIX: pool
+      # ── API Security ──────────────────────────
+      # API_KEY: "ganti-dengan-token-acak-panjang"
       # ── Proxy (opsional) ──────────────────────
       # BROWSER_PROXY_SERVER: "http://host:port"
       # BROWSER_PROXY_USERNAME: ""

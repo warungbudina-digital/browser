@@ -3,17 +3,21 @@
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS scraper_jobs (
-  id          TEXT        PRIMARY KEY,
-  platform    TEXT        NOT NULL,
-  target_url  TEXT        NOT NULL,
-  profile_name TEXT       NOT NULL DEFAULT 'openclaw',
-  status      TEXT        NOT NULL DEFAULT 'pending'
-                          CHECK (status IN ('pending','running','done','failed')),
-  error       TEXT,
-  result_count INTEGER    DEFAULT 0,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id           TEXT        PRIMARY KEY,
+  platform     TEXT        NOT NULL,
+  target_url   TEXT        NOT NULL,
+  profile_name TEXT        NOT NULL DEFAULT 'openclaw',
+  status       TEXT        NOT NULL DEFAULT 'pending'
+                           CHECK (status IN ('pending','running','done','failed')),
+  error        TEXT,
+  result_count INTEGER     DEFAULT 0,
+  webhook_url  TEXT,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Migrasi idempoten untuk database yang sudah ada sebelum Phase 5
+ALTER TABLE scraper_jobs ADD COLUMN IF NOT EXISTS webhook_url TEXT;
 
 CREATE TABLE IF NOT EXISTS scraped_profiles (
   id              SERIAL      PRIMARY KEY,
@@ -58,3 +62,20 @@ CREATE INDEX IF NOT EXISTS idx_profiles_lookup ON scraped_profiles(platform, use
 CREATE INDEX IF NOT EXISTS idx_posts_author    ON scraped_posts(platform, author_username);
 CREATE INDEX IF NOT EXISTS idx_posts_scraped   ON scraped_posts(scraped_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_hashtags  ON scraped_posts USING GIN(hashtags);
+
+-- =============================================================================
+-- Sessions — simpan cookies browser per (profile × platform)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS scraper_sessions (
+  id          BIGSERIAL   PRIMARY KEY,
+  profile     TEXT        NOT NULL,
+  platform    TEXT        NOT NULL,
+  cookies     JSONB       NOT NULL DEFAULT '[]',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at  TIMESTAMPTZ,
+  UNIQUE (profile, platform)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_profile ON scraper_sessions(profile);

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { BrowserManager } from './browser/BrowserManager.js';
 import { ScraperService, SUPPORTED_PLATFORMS } from './scraper/ScraperService.js';
 import * as analytics from './scraper/analytics.js';
+import { createApiKeyHook } from './middleware/apiKey.js';
 
 const actRequestSchema = z.lazy(() => z.object({
   kind: z.string(),
@@ -97,10 +98,14 @@ const profileSchema = z.object({
   }).optional()
 });
 
-export function createServer(config, { browser: injectedBrowser, dataStore, jobQueue = null, pool = null } = {}) {
+export function createServer(config, { browser: injectedBrowser, dataStore, sessionStore = null, jobQueue = null, pool = null } = {}) {
   const app = Fastify({ logger: true });
   const browser = injectedBrowser ?? new BrowserManager(config.browser);
   const scraper = dataStore ? new ScraperService(browser, dataStore, jobQueue) : null;
+
+  // ── API key auth (global, /health dikecualikan) ──────────────────────────
+  const apiKeyHook = createApiKeyHook(config.server?.apiKey);
+  if (apiKeyHook) app.addHook('preHandler', apiKeyHook);
 
   app.get('/health', async () => ({ ok: true }));
   app.get('/browser/capabilities', async () => browser.capabilities());
@@ -144,7 +149,8 @@ export function createServer(config, { browser: injectedBrowser, dataStore, jobQ
     platform:    z.enum(SUPPORTED_PLATFORMS),
     targetUrl:   z.string().url(),
     profileName: z.string().optional(),
-    options:     z.record(z.unknown()).optional()
+    options:     z.record(z.unknown()).optional(),
+    webhookUrl:  z.string().url().optional(),
   });
 
   const analyticsSchema = z.object({
@@ -244,6 +250,41 @@ export function createServer(config, { browser: injectedBrowser, dataStore, jobQ
   }
 
   // ─────────────────────────────────────────────
+  // Session API (tersedia hanya jika sessionStore aktif)
+  // ─────────────────────────────────────────────
+
+  if (sessionStore) {
+    // List semua session (admin)
+    app.get('/sessions', async (_, reply) => {
+      try {
+        return { ok: true, sessions: await sessionStore.listAll() };
+      } catch (err) {
+        reply.code(500); return { ok: false, error: err.message };
+      }
+    });
+
+    // List session per profile
+    app.get('/sessions/:profile', async (req, reply) => {
+      try {
+        return { ok: true, sessions: await sessionStore.list(req.params.profile) };
+      } catch (err) {
+        reply.code(500); return { ok: false, error: err.message };
+      }
+    });
+
+    // Hapus session per profile (opsional: ?platform=instagram)
+    app.delete('/sessions/:profile', async (req, reply) => {
+      try {
+        const { platform } = req.query;
+        await sessionStore.clear(req.params.profile, platform ?? null);
+        return { ok: true, cleared: { profile: req.params.profile, platform: platform ?? 'all' } };
+      } catch (err) {
+        reply.code(500); return { ok: false, error: err.message };
+      }
+    });
+  }
+
+  // ─────────────────────────────────────────────
   // Monitor API (tersedia hanya jika pool / queue dikonfigurasi)
   // ─────────────────────────────────────────────
 
@@ -316,6 +357,12 @@ export function createServer(config, { browser: injectedBrowser, dataStore, jobQ
     <div class="err"     id="queue-err"></div>
   </div>
 
+  <div class="card">
+    <h2>Sessions</h2>
+    <div id="session-list" style="font-size:12px;line-height:1.8"></div>
+    <div class="err" id="session-err"></div>
+  </div>
+
   <script>
     const now = () => new Date().toLocaleTimeString();
     function metric(label, value, cls='') {
@@ -357,7 +404,23 @@ export function createServer(config, { browser: injectedBrowser, dataStore, jobQ
       }
     }
 
-    function refresh() { refreshPool(); refreshQueue(); }
+    async function refreshSessions() {
+      try {
+        const s = await fetch('/sessions').then(r => r.json());
+        document.getElementById('session-err').textContent = '';
+        if (!s.sessions?.length) {
+          document.getElementById('session-list').textContent = 'Belum ada session tersimpan.';
+          return;
+        }
+        document.getElementById('session-list').innerHTML = s.sessions.map(r =>
+          '<div><span style="color:#79c0ff">'+r.profile+'</span> / <span style="color:#e3b341">'+r.platform+'</span> — '+r.cookie_count+' cookies — updated '+new Date(r.updated_at).toLocaleString()+(r.expires_at ? ' — exp '+new Date(r.expires_at).toLocaleDateString() : '')+'</div>'
+        ).join('');
+      } catch {
+        document.getElementById('session-err').textContent = 'Sessions tidak tersedia';
+      }
+    }
+
+    function refresh() { refreshPool(); refreshQueue(); refreshSessions(); }
     refresh();
     setInterval(refresh, 3000);
   </script>

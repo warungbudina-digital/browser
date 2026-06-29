@@ -3,22 +3,25 @@ import { createServer } from './server.js';
 import { BrowserManager } from './browser/BrowserManager.js';
 import { BrowserPool } from './browser/BrowserPool.js';
 import { DataStore } from './scraper/DataStore.js';
+import { SessionStore } from './scraper/SessionStore.js';
 import { JobQueue } from './queue/JobQueue.js';
 
 const config = loadConfig();
 
-// BrowserManager dibuat di luar createServer agar bisa dibagi ke BrowserPool
 const browser = new BrowserManager(config.browser);
 
-let dataStore = null;
+let dataStore    = null;
+let sessionStore = null;
 if (config.db) {
   dataStore = new DataStore(config.db);
   try {
     await dataStore.init();
+    sessionStore = new SessionStore(dataStore.pool);
     console.log('[DataStore] PostgreSQL schema ready');
   } catch (err) {
     console.error('[DataStore] Gagal init DB, scraper API dinonaktifkan:', err.message);
-    dataStore = null;
+    dataStore    = null;
+    sessionStore = null;
   }
 }
 
@@ -35,18 +38,19 @@ if (config.redis && dataStore) {
   }
 
   if (pool) {
-    jobQueue = new JobQueue(config.redis, { pool, manager: browser, dataStore });
+    jobQueue = new JobQueue(config.redis, { pool, manager: browser, dataStore, sessionStore });
     console.log('[JobQueue] BullMQ worker aktif');
   }
 }
 
-const server = createServer(config, { browser, dataStore, jobQueue, pool });
+const server = createServer(config, { browser, dataStore, sessionStore, jobQueue, pool });
 
 try {
   await server.listen({ host: config.server.host, port: config.server.port });
   console.log(`full-tool-browser listening on http://${config.server.host}:${config.server.port}`);
-  if (dataStore) console.log('Scraper API aktif: /scraper/jobs, /scraper/analytics');
-  if (jobQueue) console.log(`Monitor dashboard: http://${config.server.host}:${config.server.port}/admin`);
+  if (dataStore)    console.log('Scraper API aktif: /scraper/jobs, /scraper/analytics');
+  if (jobQueue)     console.log(`Monitor dashboard: http://${config.server.host}:${config.server.port}/admin`);
+  if (config.server.apiKey) console.log('[Auth] API key aktif — semua endpoint dilindungi Bearer token');
 } catch (error) {
   server.log.error(error);
   process.exit(1);
