@@ -17,6 +17,7 @@ import {
 } from './SessionPersistence.js';
 import { assertBrowserNavigationAllowed, assertBrowserNavigationResultAllowed, assertCdpEndpointAllowed } from '../security/ssrf.js';
 import { InterceptManager, matchesPattern } from './InterceptManager.js';
+import { HarRecorder } from './HarRecorder.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -46,6 +47,7 @@ export class BrowserService {
     this.traceState = { active: false, options: null };
     this.interceptManager = new InterceptManager();
     this.interceptorInstalled = false;
+    this.harRecorder = new HarRecorder();
   }
 
   async start() {
@@ -93,6 +95,7 @@ export class BrowserService {
     this.traceState = { active: false, options: null };
     this.refStore.clearAll();
     this.logs.clear();
+    this.harRecorder.clearAll();
     this.currentTargetId = null;
     this.startedAt = null;
 
@@ -599,7 +602,14 @@ export class BrowserService {
     page.on('requestfinished', async (request) => {
       try {
         const response = await request.response();
-        this.logs.get(targetId)?.requests.push({ method: request.method(), url: request.url(), status: response?.status() || null, at: new Date().toISOString() });
+        const status   = response?.status() ?? -1;
+        this.logs.get(targetId)?.requests.push({ method: request.method(), url: request.url(), status: status || null, at: new Date().toISOString() });
+        const timing    = request.timing();
+        const timeMs    = timing?.responseEnd >= 0 ? Math.round(timing.responseEnd) : -1;
+        const reqHdrs   = Object.entries(request.headers()).map(([name, value]) => ({ name, value }));
+        const resHdrs   = response ? Object.entries(response.headers()).map(([name, value]) => ({ name, value })) : [];
+        const mimeType  = (response?.headers()['content-type'] || 'application/octet-stream').split(';')[0].trim() || 'application/octet-stream';
+        this.harRecorder.add({ targetId, method: request.method(), url: request.url(), status, mimeType, requestHeaders: reqHdrs, responseHeaders: resHdrs, timeMs });
       } catch {
         this.logs.get(targetId)?.requests.push({ method: request.method(), url: request.url(), status: null, at: new Date().toISOString() });
       }
@@ -713,6 +723,21 @@ export class BrowserService {
       this.interceptorInstalled = false;
     }
     return { ok: true, profileName: this.profileName };
+  }
+
+  // ── HAR Recording (Phase 21) ─────────────────────────────────────────────────
+
+  async harGet({ targetId, urlFilter, limit, format = 'entries' } = {}) {
+    if (format === 'har') {
+      return { ok: true, profileName: this.profileName, har: this.harRecorder.toHAR({ targetId }) };
+    }
+    const entries = this.harRecorder.list({ targetId, urlFilter, limit });
+    return { ok: true, profileName: this.profileName, entries, count: entries.length };
+  }
+
+  async harClear({ targetId } = {}) {
+    const cleared = targetId ? this.harRecorder.clear(targetId) : this.harRecorder.clearAll();
+    return { ok: true, profileName: this.profileName, cleared };
   }
 
   async #ensureInterceptorInstalled() {
