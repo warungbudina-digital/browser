@@ -45,6 +45,7 @@ export class BrowserManager {
       deviceActions:    ['device-list', 'device-emulate', 'device-reset'],
       transformActions: ['transform-add', 'transform-list', 'transform-remove', 'transform-clear'],
       storageActions:   ['storage-save', 'storage-load', 'storage-list', 'storage-delete'],
+      cookieFilterOps:  ['by-domain', 'by-name', 'by-path', 'expired', 'group', 'netscape'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -187,6 +188,7 @@ export class BrowserManager {
       case 'storage-load':   return service.storageLoad(payload);
       case 'storage-list':   return service.storageList(payload);
       case 'storage-delete': return service.storageDelete(payload);
+      case 'cookie-filter':  return service.cookieFilter(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }

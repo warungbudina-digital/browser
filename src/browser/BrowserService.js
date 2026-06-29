@@ -22,6 +22,7 @@ import { EventRecorder } from './EventRecorder.js';
 import { DeviceEmulator } from './DeviceEmulator.js';
 import { ResponseTransformer, applyTransforms } from './ResponseTransformer.js';
 import { storageFilename, serializeStorage, parseStorageFile } from './StoragePersistence.js';
+import { filterByDomain, filterByName, filterByPath, filterExpired, groupByDomain, formatNetscape } from './CookieFilter.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -772,6 +773,21 @@ export class BrowserService {
       await this.#humanDelay(200, 700);
     } catch {
       // best-effort
+    }
+  }
+
+  // ── Cookie Filter (Phase 26) ─────────────────────────────────────────────────
+
+  async cookieFilter({ targetId, operation, domain, name, path, now } = {}) {
+    const { cookies } = await this.cookies({ targetId, kind: 'get' });
+    switch (operation) {
+      case 'by-domain': return { ok: true, profileName: this.profileName, cookies: filterByDomain(cookies, domain) };
+      case 'by-name':   return { ok: true, profileName: this.profileName, cookies: filterByName(cookies, name) };
+      case 'by-path':   return { ok: true, profileName: this.profileName, cookies: filterByPath(cookies, path) };
+      case 'expired':   return { ok: true, profileName: this.profileName, cookies: filterExpired(cookies, now) };
+      case 'group':     return { ok: true, profileName: this.profileName, groups: groupByDomain(cookies) };
+      case 'netscape':  return { ok: true, profileName: this.profileName, text: formatNetscape(cookies) };
+      default: throw new Error(`Unsupported cookie filter operation: ${operation}. Valid: by-domain, by-name, by-path, expired, group, netscape`);
     }
   }
 
