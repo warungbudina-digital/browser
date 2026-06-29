@@ -57,6 +57,19 @@ const requestSchema = z.object({
   sources: z.boolean().optional(),
   title: z.string().optional(),
   traceAction: z.enum(["start", "stop"]).optional(),
+  kind: z.string().optional(),
+  cookies: z.array(z.object({
+    name: z.string(),
+    value: z.string(),
+    domain: z.string().optional(),
+    path: z.string().optional(),
+    expires: z.number().optional(),
+    httpOnly: z.boolean().optional(),
+    secure: z.boolean().optional(),
+    sameSite: z.enum(['Strict', 'Lax', 'None']).optional(),
+    url: z.string().optional()
+  })).optional(),
+  domain: z.string().optional(),
   request: actRequestSchema.optional()
 });
 

@@ -32,7 +32,7 @@ export class BrowserManager {
       requestEndpoint: '/browser/request',
       profileEndpoint: '/browser/profiles',
       defaultProfile: state.activeProfile,
-      actions: ['status', 'start', 'stop', 'tabs', 'open', 'navigate', 'focus', 'close', 'snapshot', 'screenshot', 'pdf', 'upload', 'download', 'trace', 'console', 'errors', 'requests', 'dialog', 'act'],
+      actions: ['status', 'start', 'stop', 'tabs', 'open', 'navigate', 'focus', 'close', 'snapshot', 'screenshot', 'pdf', 'upload', 'download', 'trace', 'console', 'errors', 'requests', 'dialog', 'warmup', 'cookies', 'act'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -118,6 +118,8 @@ export class BrowserManager {
       case 'errors': return service.errors(payload);
       case 'requests': return service.requests(payload);
       case 'dialog': return service.dialog(payload);
+      case 'warmup': return service.warmup();
+      case 'cookies': return service.cookies(payload);
       case 'act': return service.act({ targetId: payload.targetId, request: payload.request });
       default:
         throw new Error(`Unsupported action: ${action}`);

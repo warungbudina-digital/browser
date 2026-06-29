@@ -10,7 +10,7 @@
     "dev": "node ./src/index.js",
     "start": "node ./src/index.js",
     "test": "node --test",
-    "lint": "node --check ./src/index.js && node --check ./src/cli.js && node --check ./src/server.js && node --check ./src/config.js && node --check ./src/browser/BrowserService.js && node --check ./src/browser/BrowserManager.js && node --check ./src/browser/ProfileStore.js && node --check ./src/browser/RefStore.js && node --check ./src/browser/snapshot.js && node --check ./src/security/ssrf.js"
+    "lint": "node --check ./src/index.js && node --check ./src/cli.js && node --check ./src/server.js && node --check ./src/config.js && node --check ./src/browser/BrowserService.js && node --check ./src/browser/BrowserManager.js && node --check ./src/browser/FingerprintManager.js && node --check ./src/browser/RetryManager.js && node --check ./src/browser/RateLimiter.js && node --check ./src/browser/ProfileStore.js && node --check ./src/browser/RefStore.js && node --check ./src/browser/snapshot.js && node --check ./src/security/ssrf.js"
   },
   "engines": {
     "node": ">=22"

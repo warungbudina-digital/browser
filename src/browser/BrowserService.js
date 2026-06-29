@@ -4,6 +4,8 @@ import crypto from 'node:crypto';
 import { chromium } from 'patchright';
 import { RefStore } from './RefStore.js';
 import { FingerprintManager } from './FingerprintManager.js';
+import { RateLimiter } from './RateLimiter.js';
+import { withRetry } from './RetryManager.js';
 import { buildSnapshotFromNodes, collectDomNodes } from './snapshot.js';
 import { assertBrowserNavigationAllowed, assertBrowserNavigationResultAllowed, assertCdpEndpointAllowed } from '../security/ssrf.js';
 
@@ -26,6 +28,7 @@ export class BrowserService {
     this.ssrfPolicy = ssrfPolicy;
     this.stealthEnabled = profile.stealth !== false;
     this.refStore = new RefStore();
+    this.rateLimiter = this.stealthEnabled ? new RateLimiter() : null;
     this.browser = null;
     this.context = null;
     this.currentTargetId = null;
@@ -68,6 +71,7 @@ export class BrowserService {
     for (const page of this.context.pages()) this.#registerPage(page);
     if (this.context.pages().length === 0) this.#registerPage(await this.context.newPage());
     if (!this.currentTargetId) this.currentTargetId = this.#pageId(this.context.pages()[0]);
+    if (this.stealthEnabled) await this.#autoWarmup();
     return this.status();
   }
 
@@ -124,9 +128,10 @@ export class BrowserService {
   async open(url) {
     await assertBrowserNavigationAllowed({ url, ssrfPolicy: this.ssrfPolicy });
     await this.start();
+    if (this.stealthEnabled) await this.rateLimiter.throttle(url);
     const page = await this.context.newPage();
     this.#registerPage(page);
-    const response = await page.goto(url, { waitUntil: 'domcontentloaded' });
+    const response = await withRetry(() => page.goto(url, { waitUntil: 'domcontentloaded' }));
     await this.#assertResponseAllowed(page, response);
     const targetId = this.#pageId(page);
     this.currentTargetId = targetId;
@@ -135,8 +140,9 @@ export class BrowserService {
 
   async navigate(url, targetId) {
     await assertBrowserNavigationAllowed({ url, ssrfPolicy: this.ssrfPolicy });
+    if (this.stealthEnabled) await this.rateLimiter.throttle(url);
     const page = await this.#getPage(targetId);
-    const response = await page.goto(url, { waitUntil: 'domcontentloaded' });
+    const response = await withRetry(() => page.goto(url, { waitUntil: 'domcontentloaded' }));
     await this.#assertResponseAllowed(page, response);
     this.currentTargetId = this.#pageId(page);
     return { ok: true, profileName: this.profileName, targetId: this.#pageId(page), url: page.url(), title: await page.title() };
@@ -272,6 +278,69 @@ export class BrowserService {
     if (accept) await pending.accept(promptText); else await pending.dismiss();
     store.dialog = null;
     return { ok: true, profileName: this.profileName, handled: true };
+  }
+
+  /**
+   * Warmup eksplisit — jalankan di halaman aktif sebelum scraping.
+   * Simulasi mouse movement + scroll agar tampak seperti user yang membaca halaman.
+   */
+  async warmup() {
+    await this.start();
+    const page = await this.#getPage();
+    try {
+      const size = page.viewportSize() ?? { width: 1280, height: 720 };
+      const moves = 3 + Math.floor(Math.random() * 4);
+      for (let i = 0; i < moves; i++) {
+        await page.mouse.move(
+          100 + Math.random() * (size.width - 200),
+          80 + Math.random() * (size.height - 160),
+          { steps: 5 + Math.floor(Math.random() * 8) }
+        );
+        await this.#humanDelay(100, 450);
+      }
+      // Simulasi scroll membaca: turun lalu naik sedikit
+      const scrollY = 80 + Math.floor(Math.random() * 250);
+      await page.evaluate((y) => window.scrollBy({ top: y, behavior: 'smooth' }), scrollY);
+      await this.#humanDelay(500, 1400);
+      await page.evaluate((y) => window.scrollBy({ top: -Math.floor(y * 0.6), behavior: 'smooth' }), scrollY);
+      await this.#humanDelay(200, 600);
+    } catch {
+      // best-effort — jangan block caller
+    }
+    return { ok: true, profileName: this.profileName, warmedUp: true };
+  }
+
+  /**
+   * Cookie management eksplisit.
+   * kind='get'   → list cookies untuk URL halaman aktif (atau semua jika tanpa targetId)
+   * kind='set'   → inject cookies ke context (berguna untuk restore session)
+   * kind='clear' → hapus cookies, optional filter domain
+   */
+  async cookies({ targetId, kind, cookies: cookieList, domain } = {}) {
+    await this.start();
+    switch (kind) {
+      case 'get': {
+        const urls = [];
+        if (targetId) {
+          const page = await this.#getPage(targetId);
+          urls.push(page.url());
+        }
+        const result = await this.context.cookies(urls.length ? urls : undefined);
+        return { ok: true, profileName: this.profileName, cookies: result };
+      }
+      case 'set': {
+        if (!Array.isArray(cookieList) || cookieList.length === 0) throw new Error('cookies array wajib untuk kind=set');
+        await this.context.addCookies(cookieList);
+        return { ok: true, profileName: this.profileName, added: cookieList.length };
+      }
+      case 'clear': {
+        await this.context.clearCookies(domain ? { domain } : undefined);
+        if (this.stealthEnabled) this.rateLimiter.reset();
+        return { ok: true, profileName: this.profileName, cleared: true };
+      }
+      default:
+        throw new Error(`Unsupported cookies kind: ${kind}. Gunakan: get | set | clear`);
+    }
   }
 
   async act({ targetId, request }) {
@@ -471,6 +540,26 @@ export class BrowserService {
       await page.mouse.move(x, y, { steps: Math.floor(8 + Math.random() * 10) });
     } catch {
       // best-effort — jangan block action utama
+    }
+  }
+
+  // Warmup minimal saat browser baru start — establishes input state
+  async #autoWarmup() {
+    const page = this.context.pages()[0];
+    if (!page) return;
+    try {
+      const size = page.viewportSize() ?? { width: 1280, height: 720 };
+      for (let i = 0; i < 2 + Math.floor(Math.random() * 3); i++) {
+        await page.mouse.move(
+          100 + Math.random() * (size.width - 200),
+          80 + Math.random() * (size.height - 160),
+          { steps: 3 + Math.floor(Math.random() * 5) }
+        );
+        await this.#humanDelay(80, 280);
+      }
+      await this.#humanDelay(200, 700);
+    } catch {
+      // best-effort
     }
   }
 }
