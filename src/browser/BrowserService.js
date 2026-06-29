@@ -7,6 +7,10 @@ import { FingerprintManager } from './FingerprintManager.js';
 import { RateLimiter } from './RateLimiter.js';
 import { withRetry } from './RetryManager.js';
 import { buildSnapshotFromNodes, collectDomNodes, collectFrameNodes } from './snapshot.js';
+import {
+  textCollector, metaCollector, linksCollector,
+  buildTextContent, buildMetadata, buildLinks,
+} from './ContentExtractor.js';
 import { assertBrowserNavigationAllowed, assertBrowserNavigationResultAllowed, assertCdpEndpointAllowed } from '../security/ssrf.js';
 
 const PAGE_ID = Symbol('page-id');
@@ -181,6 +185,38 @@ export class BrowserService {
     });
     this.refStore.setSnapshot(this.#pageId(page), snapshot);
     return { ok: true, profileName: this.profileName, ...snapshot };
+  }
+
+  async extract({ targetId, kind = 'text' }) {
+    const page = await this.#getPage(targetId);
+    const url   = page.url();
+    const title = await page.title();
+    const pid   = this.#pageId(page);
+
+    if (kind === 'meta') {
+      const raw = await page.evaluate(metaCollector);
+      return { ok: true, profileName: this.profileName, targetId: pid, url, title, kind, ...buildMetadata(raw) };
+    }
+    if (kind === 'links') {
+      const raw = await page.evaluate(linksCollector);
+      return { ok: true, profileName: this.profileName, targetId: pid, url, title, kind, ...buildLinks(raw, url) };
+    }
+    if (kind === 'full') {
+      const [rawText, rawMeta, rawLinks] = await Promise.all([
+        page.evaluate(textCollector),
+        page.evaluate(metaCollector),
+        page.evaluate(linksCollector),
+      ]);
+      return {
+        ok: true, profileName: this.profileName, targetId: pid, url, title, kind,
+        content:  buildTextContent(rawText),
+        metadata: buildMetadata(rawMeta),
+        links:    buildLinks(rawLinks, url),
+      };
+    }
+    // default: 'text'
+    const raw = await page.evaluate(textCollector);
+    return { ok: true, profileName: this.profileName, targetId: pid, url, title, kind, ...buildTextContent(raw) };
   }
 
   async screenshot({ targetId, ref, selector, fullPage = false, path: outputPath }) {
