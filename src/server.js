@@ -98,7 +98,7 @@ const profileSchema = z.object({
   }).optional()
 });
 
-export function createServer(config, { browser: injectedBrowser, dataStore, sessionStore = null, jobQueue = null, pool = null } = {}) {
+export function createServer(config, { browser: injectedBrowser, dataStore, sessionStore = null, scheduleStore = null, jobQueue = null, pool = null, scheduler = null } = {}) {
   const app = Fastify({ logger: true });
   const browser = injectedBrowser ?? new BrowserManager(config.browser);
   const scraper = dataStore ? new ScraperService(browser, dataStore, jobQueue) : null;
@@ -285,14 +285,131 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
   }
 
   // ─────────────────────────────────────────────
+  // Schedule API
+  // ─────────────────────────────────────────────
+
+  if (scheduleStore) {
+    const scheduleSchema = z.object({
+      platform:    z.enum(SUPPORTED_PLATFORMS),
+      targetUrl:   z.string().url(),
+      profileName: z.string().optional(),
+      cronExpr:    z.string(),
+      options:     z.record(z.unknown()).optional(),
+      webhookUrl:  z.string().url().optional(),
+    });
+
+    const schedulePatchSchema = z.object({
+      platform:    z.enum(SUPPORTED_PLATFORMS).optional(),
+      targetUrl:   z.string().url().optional(),
+      profileName: z.string().optional(),
+      cronExpr:    z.string().optional(),
+      options:     z.record(z.unknown()).optional(),
+      webhookUrl:  z.string().url().optional(),
+      enabled:     z.boolean().optional(),
+    });
+
+    // Buat jadwal baru
+    app.post('/schedules', async (req, reply) => {
+      try {
+        const payload = scheduleSchema.parse(req.body || {});
+        // Validasi cron expression via node-cron
+        const { default: cron } = await import('node-cron');
+        if (!cron.validate(payload.cronExpr)) {
+          reply.code(400);
+          return { ok: false, error: `Cron expression tidak valid: "${payload.cronExpr}"` };
+        }
+        const schedule = await scheduleStore.create(payload);
+        if (scheduler) await scheduler.reload(schedule.id);
+        reply.code(201);
+        return { ok: true, schedule };
+      } catch (err) {
+        reply.code(err.name === 'ZodError' ? 400 : 500);
+        return { ok: false, error: err.message };
+      }
+    });
+
+    // List semua jadwal
+    app.get('/schedules', async (req, reply) => {
+      try {
+        const { enabled } = req.query;
+        const schedules = await scheduleStore.listAll(
+          enabled != null ? { enabled: enabled === 'true' } : {}
+        );
+        return { ok: true, schedules };
+      } catch (err) {
+        reply.code(500); return { ok: false, error: err.message };
+      }
+    });
+
+    // Get jadwal
+    app.get('/schedules/:id', async (req, reply) => {
+      try {
+        const s = await scheduleStore.get(req.params.id);
+        if (!s) { reply.code(404); return { ok: false, error: 'Jadwal tidak ditemukan' }; }
+        return { ok: true, schedule: s };
+      } catch (err) {
+        reply.code(500); return { ok: false, error: err.message };
+      }
+    });
+
+    // Update jadwal
+    app.patch('/schedules/:id', async (req, reply) => {
+      try {
+        const payload = schedulePatchSchema.parse(req.body || {});
+        if (payload.cronExpr) {
+          const { default: cron } = await import('node-cron');
+          if (!cron.validate(payload.cronExpr)) {
+            reply.code(400);
+            return { ok: false, error: `Cron expression tidak valid: "${payload.cronExpr}"` };
+          }
+        }
+        const schedule = await scheduleStore.update(req.params.id, payload);
+        if (!schedule) { reply.code(404); return { ok: false, error: 'Jadwal tidak ditemukan' }; }
+        if (scheduler) await scheduler.reload(schedule.id);
+        return { ok: true, schedule };
+      } catch (err) {
+        reply.code(err.name === 'ZodError' ? 400 : 500);
+        return { ok: false, error: err.message };
+      }
+    });
+
+    // Hapus jadwal
+    app.delete('/schedules/:id', async (req, reply) => {
+      try {
+        await scheduleStore.delete(req.params.id);
+        if (scheduler) scheduler.unregister(req.params.id);
+        return { ok: true, deleted: req.params.id };
+      } catch (err) {
+        reply.code(500); return { ok: false, error: err.message };
+      }
+    });
+
+    // Trigger manual
+    app.post('/schedules/:id/trigger', async (req, reply) => {
+      try {
+        if (!scheduler) {
+          reply.code(503);
+          return { ok: false, error: 'Scheduler tidak aktif (Redis/DB diperlukan)' };
+        }
+        const result = await scheduler.trigger(req.params.id);
+        return { ok: true, ...result };
+      } catch (err) {
+        reply.code(err.message.includes('tidak ditemukan') ? 404 : 500);
+        return { ok: false, error: err.message };
+      }
+    });
+  }
+
+  // ─────────────────────────────────────────────
   // Monitor API (tersedia hanya jika pool / queue dikonfigurasi)
   // ─────────────────────────────────────────────
 
   app.get('/monitor/health', async () => ({
-    ok:    true,
-    pool:  pool ? pool.status() : null,
-    queue: jobQueue ? await jobQueue.stats().catch(() => null) : null,
-    db:    dataStore ? 'connected' : 'disabled',
+    ok:        true,
+    pool:      pool      ? pool.status()                          : null,
+    queue:     jobQueue  ? await jobQueue.stats().catch(() => null) : null,
+    scheduler: scheduler ? scheduler.status()                     : null,
+    db:        dataStore ? 'connected'                            : 'disabled',
   }));
 
   if (pool) {
@@ -363,6 +480,13 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
     <div class="err" id="session-err"></div>
   </div>
 
+  <div class="card">
+    <h2>Schedules <span id="ts-sched"></span></h2>
+    <div class="metrics" id="sched-metrics"></div>
+    <div id="sched-list" style="margin-top:10px;font-size:12px;line-height:1.8"></div>
+    <div class="err" id="sched-err"></div>
+  </div>
+
   <script>
     const now = () => new Date().toLocaleTimeString();
     function metric(label, value, cls='') {
@@ -420,7 +544,27 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
       }
     }
 
-    function refresh() { refreshPool(); refreshQueue(); refreshSessions(); }
+    async function refreshSchedules() {
+      try {
+        const h = await fetch('/monitor/health').then(r => r.json());
+        const s = h.scheduler;
+        if (!s) { document.getElementById('sched-err').textContent = 'Scheduler tidak aktif'; return; }
+        document.getElementById('ts-sched').textContent = now();
+        document.getElementById('sched-metrics').innerHTML =
+          metric('Aktif', s.count, s.count > 0 ? 'free' : '');
+        const list = await fetch('/schedules').then(r => r.json());
+        document.getElementById('sched-list').innerHTML = (list.schedules||[]).map(s =>
+          '<div><span style="color:#79c0ff">'+s.platform+'</span> | <span style="color:#e3b341">'+s.cron_expr+'</span> | '+
+          s.target_url.slice(0,50)+(s.target_url.length>50?'…':'')+
+          ' | '+(s.enabled ? '<span style="color:#3fb950">on</span>' : '<span style="color:#8b949e">off</span>')+
+          (s.last_run_at ? ' | last: '+new Date(s.last_run_at).toLocaleString() : '')+
+          '</div>'
+        ).join('') || '<div style="color:#8b949e">Belum ada jadwal</div>';
+        document.getElementById('sched-err').textContent = '';
+      } catch { document.getElementById('sched-err').textContent = 'Gagal load schedules'; }
+    }
+
+    function refresh() { refreshPool(); refreshQueue(); refreshSessions(); refreshSchedules(); }
     refresh();
     setInterval(refresh, 3000);
   </script>

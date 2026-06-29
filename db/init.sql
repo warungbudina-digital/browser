@@ -79,3 +79,24 @@ CREATE TABLE IF NOT EXISTS scraper_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_profile ON scraper_sessions(profile);
+
+-- =============================================================================
+-- Schedules — recurring scrape jobs dengan cron expression
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS scraper_schedules (
+  id           TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  platform     TEXT        NOT NULL,
+  target_url   TEXT        NOT NULL,
+  profile_name TEXT        NOT NULL DEFAULT 'openclaw',
+  cron_expr    TEXT        NOT NULL,   -- standar 5-field: "0 */6 * * *"
+  options      JSONB       NOT NULL DEFAULT '{}',
+  webhook_url  TEXT,
+  enabled      BOOLEAN     NOT NULL DEFAULT true,
+  last_run_at  TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_schedules_enabled  ON scraper_schedules(enabled);
+CREATE INDEX IF NOT EXISTS idx_schedules_platform ON scraper_schedules(platform);
