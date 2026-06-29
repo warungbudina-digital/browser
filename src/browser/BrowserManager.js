@@ -47,6 +47,7 @@ export class BrowserManager {
       storageActions:   ['storage-save', 'storage-load', 'storage-list', 'storage-delete'],
       cookieFilterOps:  ['by-domain', 'by-name', 'by-path', 'expired', 'group', 'netscape'],
       geoActions:       ['geo-list', 'geo-add', 'geo-remove', 'geo-emulate', 'geo-reset'],
+      throttleActions:  ['throttle-list', 'throttle-add', 'throttle-remove', 'throttle-set', 'throttle-reset'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -195,6 +196,11 @@ export class BrowserManager {
       case 'geo-remove':  return service.geoRemove(payload);
       case 'geo-emulate': return service.geoEmulate(payload);
       case 'geo-reset':   return service.geoReset(payload);
+      case 'throttle-list':   return service.throttleList();
+      case 'throttle-add':    return service.throttleAdd(payload);
+      case 'throttle-remove': return service.throttleRemove(payload);
+      case 'throttle-set':    return service.throttleSet(payload);
+      case 'throttle-reset':  return service.throttleReset(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }

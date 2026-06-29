@@ -24,6 +24,7 @@ import { ResponseTransformer, applyTransforms } from './ResponseTransformer.js';
 import { storageFilename, serializeStorage, parseStorageFile } from './StoragePersistence.js';
 import { filterByDomain, filterByName, filterByPath, filterExpired, groupByDomain, formatNetscape } from './CookieFilter.js';
 import { GeolocationEmulator } from './GeolocationEmulator.js';
+import { NetworkThrottleManager } from './NetworkThrottleManager.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -59,6 +60,7 @@ export class BrowserService {
     this.deviceEmulator = new DeviceEmulator();
     this.activeDevice = null;
     this.geoEmulator = new GeolocationEmulator();
+    this.networkThrottle = new NetworkThrottleManager();
   }
 
   async start() {
@@ -961,6 +963,51 @@ export class BrowserService {
   async geoReset({ targetId } = {}) {
     const page = this.#pageFor(targetId);
     await page.context().setGeolocation(null);
+    return { ok: true, targetId, reset: true };
+  }
+
+  // ── Network Throttling (Phase 28) ─────────────────────────────────────────────
+
+  async throttleList() {
+    const locations = [...this.networkThrottle.list().entries()].map(([name, spec]) => ({ name, ...spec }));
+    return { ok: true, presets: this.networkThrottle.presets(), profiles: locations, count: locations.length };
+  }
+
+  async throttleAdd({ name, downloadThroughput, uploadThroughput, latency, offline } = {}) {
+    const spec = this.networkThrottle.add(name, { downloadThroughput, uploadThroughput, latency, offline });
+    return { ok: true, name: String(name).trim(), spec };
+  }
+
+  async throttleRemove({ name } = {}) {
+    const removed = this.networkThrottle.remove(name);
+    return { ok: true, name, removed };
+  }
+
+  async throttleSet({ targetId, name, downloadThroughput, uploadThroughput, latency, offline } = {}) {
+    const page = this.#pageFor(targetId);
+    const spec  = name != null
+      ? this.networkThrottle.resolve(name)
+      : this.networkThrottle.validateSpec({ downloadThroughput, uploadThroughput, latency, offline });
+    await page.context().setOffline(spec.offline);
+    if (!spec.offline) {
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send('Network.emulateNetworkConditions', {
+        offline:             false,
+        downloadThroughput:  spec.downloadThroughput,
+        uploadThroughput:    spec.uploadThroughput,
+        latency:             spec.latency,
+      });
+    }
+    return { ok: true, targetId, profile: spec };
+  }
+
+  async throttleReset({ targetId } = {}) {
+    const page = this.#pageFor(targetId);
+    await page.context().setOffline(false);
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Network.emulateNetworkConditions', {
+      offline: false, downloadThroughput: -1, uploadThroughput: -1, latency: 0,
+    });
     return { ok: true, targetId, reset: true };
   }
 }
