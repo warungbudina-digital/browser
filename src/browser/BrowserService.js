@@ -25,6 +25,7 @@ import { storageFilename, serializeStorage, parseStorageFile } from './StoragePe
 import { filterByDomain, filterByName, filterByPath, filterExpired, groupByDomain, formatNetscape } from './CookieFilter.js';
 import { GeolocationEmulator } from './GeolocationEmulator.js';
 import { NetworkThrottleManager } from './NetworkThrottleManager.js';
+import { PermissionManager } from './PermissionManager.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -61,6 +62,7 @@ export class BrowserService {
     this.activeDevice = null;
     this.geoEmulator = new GeolocationEmulator();
     this.networkThrottle = new NetworkThrottleManager();
+    this.permissionManager = new PermissionManager();
   }
 
   async start() {
@@ -1009,5 +1011,36 @@ export class BrowserService {
       offline: false, downloadThroughput: -1, uploadThroughput: -1, latency: 0,
     });
     return { ok: true, targetId, reset: true };
+  }
+
+  // ── Permission Management (Phase 29) ──────────────────────────────────────────
+
+  async permissionGrant({ targetId, permissions } = {}) {
+    const page    = this.#pageFor(targetId);
+    const granted = this.permissionManager.grant(targetId, permissions);
+    await page.context().grantPermissions(granted);
+    return { ok: true, targetId, granted };
+  }
+
+  async permissionRevoke({ targetId, permissions } = {}) {
+    const page      = this.#pageFor(targetId);
+    const remaining = this.permissionManager.revoke(targetId, permissions);
+    await page.context().clearPermissions();
+    if (remaining.length > 0) await page.context().grantPermissions(remaining);
+    return { ok: true, targetId, remaining };
+  }
+
+  async permissionReset({ targetId } = {}) {
+    const page = this.#pageFor(targetId);
+    this.permissionManager.reset(targetId);
+    await page.context().clearPermissions();
+    return { ok: true, targetId, reset: true };
+  }
+
+  async permissionList({ targetId } = {}) {
+    if (targetId != null) {
+      return { ok: true, targetId, permissions: this.permissionManager.list(targetId) };
+    }
+    return { ok: true, all: this.permissionManager.listAll() };
   }
 }

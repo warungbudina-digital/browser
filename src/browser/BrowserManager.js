@@ -48,6 +48,7 @@ export class BrowserManager {
       cookieFilterOps:  ['by-domain', 'by-name', 'by-path', 'expired', 'group', 'netscape'],
       geoActions:       ['geo-list', 'geo-add', 'geo-remove', 'geo-emulate', 'geo-reset'],
       throttleActions:  ['throttle-list', 'throttle-add', 'throttle-remove', 'throttle-set', 'throttle-reset'],
+      permissionActions: ['permission-grant', 'permission-revoke', 'permission-reset', 'permission-list'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -201,6 +202,10 @@ export class BrowserManager {
       case 'throttle-remove': return service.throttleRemove(payload);
       case 'throttle-set':    return service.throttleSet(payload);
       case 'throttle-reset':  return service.throttleReset(payload);
+      case 'permission-grant':  return service.permissionGrant(payload);
+      case 'permission-revoke': return service.permissionRevoke(payload);
+      case 'permission-reset':  return service.permissionReset(payload);
+      case 'permission-list':   return service.permissionList(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
