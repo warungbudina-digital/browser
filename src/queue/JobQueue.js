@@ -27,11 +27,15 @@ export class JobQueue {
   #events;
   #pool;
 
-  #mqtt; // MqttPublisher | null
+  #mqtt;         // MqttPublisher | null
+  #metrics;      // MetricsCollector | null
+  #alertManager; // AlertManager | null
 
-  constructor(redisConfig, { pool, manager, dataStore, sessionStore = null, mqttPublisher = null }) {
-    this.#pool = pool;
-    this.#mqtt = mqttPublisher;
+  constructor(redisConfig, { pool, manager, dataStore, sessionStore = null, mqttPublisher = null, metrics = null, alertManager = null }) {
+    this.#pool         = pool;
+    this.#mqtt         = mqttPublisher;
+    this.#metrics      = metrics;
+    this.#alertManager = alertManager;
 
     this.#queue = new Queue(QUEUE_NAME, { connection: redisConfig });
 
@@ -53,7 +57,8 @@ export class JobQueue {
 
   async #process(bullJob, manager, dataStore, sessionStore) {
     const { jobId, platform, targetUrl, options, webhookUrl } = bullJob.data;
-    const isFinal = bullJob.attemptsMade >= (bullJob.opts.attempts ?? 1) - 1;
+    const isFinal  = bullJob.attemptsMade >= (bullJob.opts.attempts ?? 1) - 1;
+    const startedAt = Date.now();
 
     let slot;
     try {
@@ -66,6 +71,10 @@ export class JobQueue {
           webhook.fire(webhookUrl, failPayload),
           this.#mqtt?.publish(jobId, failPayload),
         ]);
+        this.#metrics?.inc('scraper_jobs_total', { platform, status: 'failed' });
+        await this.#alertManager?.recordFailure(platform, { jobId, error: err.message });
+      } else {
+        this.#metrics?.inc('scraper_retries_total', { platform });
       }
       throw err;
     }
@@ -113,6 +122,11 @@ export class JobQueue {
         }
       }
 
+      const durationSec = (Date.now() - startedAt) / 1000;
+      this.#metrics?.inc('scraper_jobs_total', { platform, status: 'completed' });
+      this.#metrics?.observe('scraper_job_duration_seconds', { platform }, durationSec);
+      this.#alertManager?.recordSuccess(platform);
+
       const donePayload = {
         jobId, platform, targetUrl, status: 'done',
         postCount: posts.length,
@@ -131,6 +145,10 @@ export class JobQueue {
           webhook.fire(webhookUrl, failPayload),
           this.#mqtt?.publish(jobId, failPayload),
         ]);
+        this.#metrics?.inc('scraper_jobs_total', { platform, status: 'failed' });
+        await this.#alertManager?.recordFailure(platform, { jobId, error: err.message });
+      } else {
+        this.#metrics?.inc('scraper_retries_total', { platform });
       }
       throw err;
     } finally {
@@ -145,6 +163,7 @@ export class JobQueue {
       { jobId, platform, targetUrl, options, webhookUrl },
       { ...DEFAULT_JOB_OPTS, ...opts }
     );
+    this.#metrics?.inc('scraper_jobs_total', { platform, status: 'submitted' });
     return bullJob.id;
   }
 

@@ -8,10 +8,15 @@ import { JobQueue } from './queue/JobQueue.js';
 import { MqttPublisher } from './mqtt/MqttPublisher.js';
 import { ScheduleStore } from './scraper/ScheduleStore.js';
 import { Scheduler } from './scheduler/Scheduler.js';
+import { createMetrics } from './metrics/MetricsCollector.js';
+import { AlertManager } from './metrics/AlertManager.js';
 
 const config = loadConfig();
 
 const browser = new BrowserManager(config.browser);
+
+// Metrics — aktif selalu (tidak perlu Redis/DB)
+const metrics = createMetrics();
 
 let dataStore     = null;
 let sessionStore  = null;
@@ -31,8 +36,9 @@ if (config.db) {
   }
 }
 
-let pool     = null;
-let jobQueue = null;
+let pool         = null;
+let jobQueue     = null;
+let alertManager = null;
 if (config.redis && dataStore) {
   pool = new BrowserPool(browser, { size: config.pool.size, profilePrefix: config.pool.profilePrefix });
   try {
@@ -49,10 +55,15 @@ if (config.redis && dataStore) {
       mqttPublisher = new MqttPublisher(config.mqtt);
       console.log('[MQTT] Publisher inisialisasi →', config.mqtt.brokerUrl);
     }
-    jobQueue = new JobQueue(config.redis, { pool, manager: browser, dataStore, sessionStore, mqttPublisher });
+    // AlertManager dibuat setelah mqttPublisher tersedia agar bisa publish alert
+    alertManager = new AlertManager(config.alerting, { mqttPublisher });
+    jobQueue = new JobQueue(config.redis, { pool, manager: browser, dataStore, sessionStore, mqttPublisher, metrics, alertManager });
     console.log('[JobQueue] BullMQ worker aktif');
   }
 }
+
+// Jika tidak ada pool/Redis, tetap buat alertManager (tanpa MQTT, untuk endpoint /monitor/metrics)
+if (!alertManager) alertManager = new AlertManager(config.alerting);
 
 // Scheduler — inisialisasi setelah scraper tersedia
 let scheduler = null;
@@ -65,7 +76,7 @@ if (scheduleStore && dataStore) {
   await scheduler.start();
 }
 
-const server = createServer(config, { browser, dataStore, sessionStore, scheduleStore, jobQueue, pool, scheduler });
+const server = createServer(config, { browser, dataStore, sessionStore, scheduleStore, jobQueue, pool, scheduler, metrics, alertManager });
 
 try {
   await server.listen({ host: config.server.host, port: config.server.port });
@@ -73,6 +84,7 @@ try {
   if (dataStore)    console.log('Scraper API aktif: /scraper/jobs, /scraper/analytics');
   if (jobQueue)     console.log(`Monitor dashboard: http://${config.server.host}:${config.server.port}/admin`);
   if (scheduler)    console.log('[Scheduler] Aktif — POST /schedules untuk buat jadwal baru');
+  console.log(`[Metrics] Prometheus endpoint: http://${config.server.host}:${config.server.port}/metrics`);
   if (config.server.apiKey) console.log('[Auth] API key aktif — semua endpoint dilindungi Bearer token');
 } catch (error) {
   server.log.error(error);

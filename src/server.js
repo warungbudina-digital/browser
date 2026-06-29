@@ -98,7 +98,7 @@ const profileSchema = z.object({
   }).optional()
 });
 
-export function createServer(config, { browser: injectedBrowser, dataStore, sessionStore = null, scheduleStore = null, jobQueue = null, pool = null, scheduler = null } = {}) {
+export function createServer(config, { browser: injectedBrowser, dataStore, sessionStore = null, scheduleStore = null, jobQueue = null, pool = null, scheduler = null, metrics = null, alertManager = null } = {}) {
   const app = Fastify({ logger: true });
   const browser = injectedBrowser ?? new BrowserManager(config.browser);
   const scraper = dataStore ? new ScraperService(browser, dataStore, jobQueue) : null;
@@ -401,15 +401,47 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
   }
 
   // ─────────────────────────────────────────────
+  // Metrics API (Prometheus + JSON)
+  // ─────────────────────────────────────────────
+
+  // Prometheus scrape endpoint — selalu publik (tidak perlu Bearer token)
+  app.get('/metrics', async (_, reply) => {
+    reply.type('text/plain; version=0.0.4; charset=utf-8');
+    let text = metrics ? metrics.toPrometheusText() : '';
+
+    // Pool gauge — dibaca live karena berubah terus
+    if (pool) {
+      const s = pool.status();
+      text += '# HELP browser_pool_slots_active Number of busy browser pool slots\n';
+      text += '# TYPE browser_pool_slots_active gauge\n';
+      text += 'browser_pool_slots_active ' + s.busy + '\n';
+      text += '# HELP browser_pool_slots_total Total browser pool capacity\n';
+      text += '# TYPE browser_pool_slots_total gauge\n';
+      text += 'browser_pool_slots_total ' + s.size + '\n';
+    }
+
+    return text || '# no metrics collected yet\n';
+  });
+
+  // JSON snapshot untuk admin dashboard
+  app.get('/monitor/metrics', async () => ({
+    ok:       true,
+    metrics:  metrics      ? metrics.snapshot()      : null,
+    alerts:   alertManager ? alertManager.status()   : null,
+    pool:     pool         ? pool.status()            : null,
+  }));
+
+  // ─────────────────────────────────────────────
   // Monitor API (tersedia hanya jika pool / queue dikonfigurasi)
   // ─────────────────────────────────────────────
 
   app.get('/monitor/health', async () => ({
     ok:        true,
-    pool:      pool      ? pool.status()                          : null,
-    queue:     jobQueue  ? await jobQueue.stats().catch(() => null) : null,
-    scheduler: scheduler ? scheduler.status()                     : null,
-    db:        dataStore ? 'connected'                            : 'disabled',
+    pool:      pool         ? pool.status()                            : null,
+    queue:     jobQueue     ? await jobQueue.stats().catch(() => null) : null,
+    scheduler: scheduler    ? scheduler.status()                       : null,
+    alerts:    alertManager ? alertManager.status()                    : null,
+    db:        dataStore    ? 'connected'                              : 'disabled',
   }));
 
   if (pool) {
@@ -456,6 +488,8 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
     .slot.free{background:#1a2e1a;border:1px solid #3fb950;color:#3fb950}
     .slot small{display:block;font-size:10px;opacity:.7}
     .err{color:#f85149;font-size:12px;margin-top:8px}
+    .alert-ok{color:#3fb950}.alert-firing{color:#f85149}
+    .sublabel{color:#8b949e;font-size:11px;margin:8px 0 4px}
   </style>
 </head>
 <body>
@@ -485,6 +519,14 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
     <div class="metrics" id="sched-metrics"></div>
     <div id="sched-list" style="margin-top:10px;font-size:12px;line-height:1.8"></div>
     <div class="err" id="sched-err"></div>
+  </div>
+
+  <div class="card">
+    <h2>Metrics <span id="ts-metrics"></span></h2>
+    <div class="metrics" id="metrics-breakdown"></div>
+    <div class="sublabel">Platform Alerts</div>
+    <div id="alerts-breakdown" style="font-size:12px;line-height:1.8"></div>
+    <div class="err" id="metrics-err"></div>
   </div>
 
   <script>
@@ -564,7 +606,47 @@ export function createServer(config, { browser: injectedBrowser, dataStore, sess
       } catch { document.getElementById('sched-err').textContent = 'Gagal load schedules'; }
     }
 
-    function refresh() { refreshPool(); refreshQueue(); refreshSessions(); refreshSchedules(); }
+    async function refreshMetrics() {
+      try {
+        const m = await fetch('/monitor/metrics').then(r => r.json());
+        document.getElementById('ts-metrics').textContent = now();
+        document.getElementById('metrics-err').textContent = '';
+
+        const c = m.metrics ? m.metrics.counters : {};
+        let completed = 0, failed = 0, retries = 0;
+        for (const key of Object.keys(c)) {
+          if (key.indexOf('status="completed"') !== -1) completed += c[key];
+          if (key.indexOf('status="failed"')    !== -1) failed    += c[key];
+          if (key.indexOf('scraper_retries_total') !== -1) retries += c[key];
+        }
+        const sums = m.metrics ? m.metrics.summaries : {};
+        let durSum = 0, durCount = 0;
+        for (const v of Object.values(sums)) { durSum += v.sum; durCount += v.count; }
+        const avgDur = durCount > 0 ? (durSum / durCount).toFixed(1) + 's' : '—';
+
+        document.getElementById('metrics-breakdown').innerHTML =
+          metric('Completed', completed, 'free') +
+          metric('Failed',    failed,    failed  > 0 ? 'busy' : '') +
+          metric('Retries',   retries,   retries > 0 ? 'warn' : '') +
+          metric('Avg Dur',   avgDur,    '');
+
+        const alerts = m.alerts || {};
+        const entries = Object.keys(alerts);
+        if (entries.length === 0) {
+          document.getElementById('alerts-breakdown').innerHTML = '<div style="color:#8b949e">Tidak ada alert</div>';
+        } else {
+          document.getElementById('alerts-breakdown').innerHTML = entries.map(function(platform) {
+            const info = alerts[platform];
+            const cls  = info.alerting ? 'alert-firing' : 'alert-ok';
+            return '<div><span style="color:#79c0ff">' + platform + '</span> — consecutive fails: <span class="' + cls + '">' + info.consecutiveFailures + '</span>/' + info.alertThreshold + '</div>';
+          }).join('');
+        }
+      } catch(e) {
+        document.getElementById('metrics-err').textContent = 'Metrics tidak tersedia';
+      }
+    }
+
+    function refresh() { refreshPool(); refreshQueue(); refreshSessions(); refreshSchedules(); refreshMetrics(); }
     refresh();
     setInterval(refresh, 3000);
   </script>

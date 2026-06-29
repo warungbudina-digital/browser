@@ -7,7 +7,7 @@ export function createApiKeyHook(apiKey) {
 
   return async function apiKeyPreHandler(request, reply) {
     // Rute publik yang tidak memerlukan auth
-    if (request.url === '/health') return;
+    if (request.url === '/health' || request.url === '/metrics') return;
 
     const auth  = request.headers['authorization'] ?? '';
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';

@@ -52,6 +52,11 @@ export function loadConfig(env = process.env) {
       size:          number(env.BROWSER_POOL_SIZE, 3),
       profilePrefix: env.BROWSER_POOL_PREFIX || 'pool',
     },
+    alerting: {
+      consecutiveFailureThreshold: number(env.ALERT_CONSECUTIVE_FAILURES, 3),
+      cooldownMs:                  number(env.ALERT_COOLDOWN_MS, 5 * 60_000),
+      webhookUrl:                  env.ALERT_WEBHOOK_URL || null,
+    },
     server: {
       port:   number(env.PORT, 8080),
       host:   env.HOST || '0.0.0.0',

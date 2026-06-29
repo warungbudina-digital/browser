@@ -48,6 +48,23 @@ export class MqttPublisher {
     });
   }
 
+  /**
+   * Publish payload JSON ke topic arbitrer (dipakai AlertManager untuk scraper/alerts/{platform}).
+   */
+  async publishRaw(topic, payload) {
+    if (!this.#connected) {
+      console.warn('[MQTT] Tidak terhubung, skip publishRaw →', topic);
+      return;
+    }
+    return new Promise((resolve) => {
+      this.#client.publish(topic, JSON.stringify(payload), { qos: 1, retain: false }, (err) => {
+        if (err) console.warn('[MQTT] publishRaw error:', err.message);
+        else     console.log('[MQTT] Published →', topic);
+        resolve();
+      });
+    });
+  }
+
   async close() {
     return new Promise((resolve) => this.#client.end(false, {}, resolve));
   }
