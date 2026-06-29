@@ -21,6 +21,7 @@ import { HarRecorder } from './HarRecorder.js';
 import { EventRecorder } from './EventRecorder.js';
 import { DeviceEmulator } from './DeviceEmulator.js';
 import { ResponseTransformer, applyTransforms } from './ResponseTransformer.js';
+import { storageFilename, serializeStorage, parseStorageFile } from './StoragePersistence.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -431,6 +432,10 @@ export class BrowserService {
     return path.join(this.artifactDir, 'sessions');
   }
 
+  get #storageBaseDir() {
+    return path.join(this.artifactDir, 'storage');
+  }
+
   async sessionSave({ name }) {
     const fname = sessionFilename(name);
     await this.start();
@@ -472,6 +477,60 @@ export class BrowserService {
     const fname = sessionFilename(name);
     await fs.unlink(path.join(this.#sessionsDir, fname));
     return { ok: true, profileName: this.profileName, deleted: name };
+  }
+
+  // ── Web Storage Persistence (Phase 25) ───────────────────────────────────────
+
+  async storageSave({ name, kind = 'localStorage', targetId } = {}) {
+    const fname = storageFilename(name);
+    await this.start();
+    const dir  = path.join(this.#storageBaseDir, kind);
+    await ensureDir(dir);
+    const page = await this.#getPage(targetId);
+    const raw  = await page.evaluate((k) => {
+      const store = k === 'localStorage' ? window.localStorage : window.sessionStorage;
+      const result = {};
+      for (let i = 0; i < store.length; i++) {
+        const key = store.key(i);
+        result[key] = store.getItem(key);
+      }
+      return result;
+    }, kind);
+    const data = serializeStorage(raw, { profile: this.profileName, kind });
+    await fs.writeFile(path.join(dir, fname), JSON.stringify(data, null, 2), 'utf8');
+    return { ok: true, profileName: this.profileName, name, kind, entryCount: data.entryCount };
+  }
+
+  async storageLoad({ name, kind = 'localStorage', targetId } = {}) {
+    const fname    = storageFilename(name);
+    const filePath = path.join(this.#storageBaseDir, kind, fname);
+    const raw      = JSON.parse(await fs.readFile(filePath, 'utf8'));
+    const parsed   = parseStorageFile(raw);
+    await this.start();
+    const page = await this.#getPage(targetId);
+    if (parsed.entries.length > 0) {
+      await page.evaluate(([k, entries]) => {
+        const store = k === 'localStorage' ? window.localStorage : window.sessionStorage;
+        entries.forEach(({ key, value }) => store.setItem(key, value));
+      }, [kind, parsed.entries]);
+    }
+    return { ok: true, profileName: this.profileName, name, kind, entryCount: parsed.entries.length };
+  }
+
+  async storageList({ kind = 'localStorage' } = {}) {
+    try {
+      const files = await fs.readdir(path.join(this.#storageBaseDir, kind));
+      const names = files.filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5));
+      return { ok: true, profileName: this.profileName, kind, names };
+    } catch {
+      return { ok: true, profileName: this.profileName, kind, names: [] };
+    }
+  }
+
+  async storageDelete({ name, kind = 'localStorage' } = {}) {
+    const fname = storageFilename(name);
+    await fs.unlink(path.join(this.#storageBaseDir, kind, fname));
+    return { ok: true, profileName: this.profileName, name, kind, deleted: true };
   }
 
   async act({ targetId, request }) {
