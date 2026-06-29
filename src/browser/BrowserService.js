@@ -18,6 +18,7 @@ import {
 import { assertBrowserNavigationAllowed, assertBrowserNavigationResultAllowed, assertCdpEndpointAllowed } from '../security/ssrf.js';
 import { InterceptManager, matchesPattern } from './InterceptManager.js';
 import { HarRecorder } from './HarRecorder.js';
+import { EventRecorder } from './EventRecorder.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -48,6 +49,7 @@ export class BrowserService {
     this.interceptManager = new InterceptManager();
     this.interceptorInstalled = false;
     this.harRecorder = new HarRecorder();
+    this.eventRecorder = new EventRecorder();
   }
 
   async start() {
@@ -96,6 +98,7 @@ export class BrowserService {
     this.refStore.clearAll();
     this.logs.clear();
     this.harRecorder.clearAll();
+    this.eventRecorder.clearAll();
     this.currentTargetId = null;
     this.startedAt = null;
 
@@ -149,6 +152,7 @@ export class BrowserService {
     await this.#assertResponseAllowed(page, response);
     const targetId = this.#pageId(page);
     this.currentTargetId = targetId;
+    this.eventRecorder.record(targetId, { kind: 'navigate', url: page.url() });
     return { ok: true, profileName: this.profileName, targetId, url: page.url(), title: await page.title() };
   }
 
@@ -159,6 +163,7 @@ export class BrowserService {
     const response = await withRetry(() => page.goto(url, { waitUntil: 'domcontentloaded' }));
     await this.#assertResponseAllowed(page, response);
     this.currentTargetId = this.#pageId(page);
+    this.eventRecorder.record(this.currentTargetId, { kind: 'navigate', url: page.url() });
     return { ok: true, profileName: this.profileName, targetId: this.#pageId(page), url: page.url(), title: await page.title() };
   }
 
@@ -475,6 +480,7 @@ export class BrowserService {
         if (request.doubleClick) await locator.dblclick({ timeout: request.timeoutMs });
         else await locator.click({ timeout: request.timeoutMs, button: request.button || 'left', modifiers: request.modifiers, delay: request.delayMs });
         await this.#assertCurrentUrlAllowed(page);
+        this.eventRecorder.record(this.#pageId(page), { kind: 'click', selector: request.selector, ref: request.ref });
         return { ok: true, profileName: this.profileName, kind: request.kind, targetId: this.#pageId(page) };
       }
       case 'type': {
@@ -497,16 +503,19 @@ export class BrowserService {
           await page.keyboard.press('Enter');
         }
         await this.#assertCurrentUrlAllowed(page);
+        this.eventRecorder.record(this.#pageId(page), { kind: 'type', selector: request.selector, ref: request.ref, text: request.text });
         return { ok: true, profileName: this.profileName, kind: request.kind, targetId: this.#pageId(page) };
       }
       case 'press':
         if (this.stealthEnabled) await this.#humanDelay(30, 100);
         await page.keyboard.press(request.key, request.delayMs ? { delay: request.delayMs } : undefined);
         await this.#assertCurrentUrlAllowed(page);
+        this.eventRecorder.record(this.#pageId(page), { kind: 'press', key: request.key });
         return { ok: true, profileName: this.profileName, kind: request.kind, targetId: this.#pageId(page) };
       case 'hover': {
         const locator = await this.#resolveLocator(page, request.ref, request.selector);
         await locator.hover({ timeout: request.timeoutMs });
+        this.eventRecorder.record(this.#pageId(page), { kind: 'hover', selector: request.selector, ref: request.ref });
         return { ok: true, profileName: this.profileName, kind: request.kind };
       }
       case 'scrollIntoView': {
@@ -523,6 +532,7 @@ export class BrowserService {
       case 'select': {
         const locator = await this.#resolveLocator(page, request.ref, request.selector);
         await locator.selectOption(request.values, { timeout: request.timeoutMs });
+        this.eventRecorder.record(this.#pageId(page), { kind: 'select', selector: request.selector, ref: request.ref, values: request.values });
         return { ok: true, profileName: this.profileName, kind: request.kind };
       }
       case 'fill': {
@@ -530,6 +540,7 @@ export class BrowserService {
           const locator = await this.#resolveLocator(page, field.ref, field.selector);
           await locator.fill(field.value ?? '');
         }
+        this.eventRecorder.record(this.#pageId(page), { kind: 'fill', fields: request.fields });
         return { ok: true, profileName: this.profileName, kind: request.kind, count: request.fields.length };
       }
       case 'resize':
@@ -738,6 +749,23 @@ export class BrowserService {
   async harClear({ targetId } = {}) {
     const cleared = targetId ? this.harRecorder.clear(targetId) : this.harRecorder.clearAll();
     return { ok: true, profileName: this.profileName, cleared };
+  }
+
+  // ── Event Recording (Phase 22) ───────────────────────────────────────────────
+
+  async eventList({ targetId, kind, since, limit } = {}) {
+    const events = this.eventRecorder.list({ targetId, kind, since, limit });
+    return { ok: true, profileName: this.profileName, events, count: events.length };
+  }
+
+  async eventClear({ targetId } = {}) {
+    const cleared = targetId ? this.eventRecorder.clear(targetId) : this.eventRecorder.clearAll();
+    return { ok: true, profileName: this.profileName, cleared };
+  }
+
+  async eventScript({ targetId } = {}) {
+    const { steps } = this.eventRecorder.toScript(targetId);
+    return { ok: true, profileName: this.profileName, steps, count: steps.length };
   }
 
   async #ensureInterceptorInstalled() {

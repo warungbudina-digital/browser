@@ -41,6 +41,7 @@ export class BrowserManager {
       sessionActions:   ['session-save', 'session-load', 'session-list', 'session-delete'],
       interceptActions: ['intercept-add', 'intercept-list', 'intercept-remove', 'intercept-clear'],
       harActions:       ['har-get', 'har-clear'],
+      eventActions:     ['event-list', 'event-clear', 'event-script'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -167,8 +168,11 @@ export class BrowserManager {
       case 'intercept-list':   return service.interceptList();
       case 'intercept-remove': return service.interceptRemove(payload);
       case 'intercept-clear':  return service.interceptClear();
-      case 'har-get':   return service.harGet(payload);
-      case 'har-clear': return service.harClear(payload);
+      case 'har-get':      return service.harGet(payload);
+      case 'har-clear':    return service.harClear(payload);
+      case 'event-list':   return service.eventList(payload);
+      case 'event-clear':  return service.eventClear(payload);
+      case 'event-script': return service.eventScript(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
