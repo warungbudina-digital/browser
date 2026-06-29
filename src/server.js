@@ -50,6 +50,7 @@ const requestSchema = z.object({
   targetId: z.string().optional(),
   url: z.string().optional(),
   interactive: z.boolean().optional(),
+  frames: z.boolean().optional(),
   selector: z.string().optional(),
   limit: z.number().optional(),
   ref: z.string().optional(),

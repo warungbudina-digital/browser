@@ -6,7 +6,7 @@ import { RefStore } from './RefStore.js';
 import { FingerprintManager } from './FingerprintManager.js';
 import { RateLimiter } from './RateLimiter.js';
 import { withRetry } from './RetryManager.js';
-import { buildSnapshotFromNodes, collectDomNodes } from './snapshot.js';
+import { buildSnapshotFromNodes, collectDomNodes, collectFrameNodes } from './snapshot.js';
 import { assertBrowserNavigationAllowed, assertBrowserNavigationResultAllowed, assertCdpEndpointAllowed } from '../security/ssrf.js';
 
 const PAGE_ID = Symbol('page-id');
@@ -166,16 +166,18 @@ export class BrowserService {
     return { ok: true, profileName: this.profileName, closed: id, currentTargetId: this.currentTargetId };
   }
 
-  async snapshot({ targetId, interactive = false, selector, limit = 150 }) {
+  async snapshot({ targetId, interactive = false, selector, limit = 150, frames = false }) {
     const page = await this.#getPage(targetId);
     const nodes = await collectDomNodes(page, selector);
+    const frameEntries = frames ? await collectFrameNodes(page, 50) : [];
     const snapshot = buildSnapshotFromNodes({
       targetId: this.#pageId(page),
-      url: page.url(),
-      title: await page.title(),
+      url:      page.url(),
+      title:    await page.title(),
       nodes,
       interactive,
-      limit
+      limit,
+      frameEntries,
     });
     this.refStore.setSnapshot(this.#pageId(page), snapshot);
     return { ok: true, profileName: this.profileName, ...snapshot };
@@ -505,9 +507,18 @@ export class BrowserService {
     if (!ref) throw new Error('A ref or selector is required');
     const resolved = this.refStore.getRef(this.#pageId(page), ref);
     if (!resolved) throw new Error(`Unknown ref: ${ref}. Re-run snapshot first.`);
-    const { recipe } = resolved;
-    if (recipe.role && recipe.name) return page.getByRole(recipe.role, { name: recipe.name, exact: true }).nth(recipe.nth || 0);
-    return page.locator(recipe.selector).first();
+    const { recipe, frameIndex } = resolved;
+
+    // Gunakan frame context untuk iframe refs (frameIndex > 0)
+    const ctx = (frameIndex != null && frameIndex > 0)
+      ? page.frames()[frameIndex]
+      : page;
+    if (!ctx) throw new Error(`Frame ${frameIndex} tidak lagi tersedia. Jalankan snapshot ulang.`);
+
+    if (recipe.role && recipe.name) {
+      return ctx.getByRole(recipe.role, { name: recipe.name, exact: true }).nth(recipe.nth || 0);
+    }
+    return ctx.locator(recipe.selector).first();
   }
 
   async #assertResponseAllowed(page, response) {

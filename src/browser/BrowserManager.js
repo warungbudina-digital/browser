@@ -36,6 +36,8 @@ export class BrowserManager {
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
+      snapshotOptions: { frames: 'include same-origin iframes (refs: f1e1, f1e2, ...)' },
+      ariaStates: ['checked', 'unchecked', 'expanded', 'collapsed', 'disabled', 'required', 'current'],
       ssrfPolicy: this.config.ssrfPolicy
     };
   }
