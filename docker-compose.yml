@@ -16,6 +16,11 @@ services:
       # BROWSER_PROXY_USERNAME: ""
       # BROWSER_PROXY_PASSWORD: ""
       # BROWSER_USER_AGENT: ""
+    # DNS via PiHole di VPS CHR (aktif setelah WireGuard tunnel naik)
+    # Memblokir tracking/analytics domain sebelum browser menyentuhnya
+    dns:
+      - 10.10.0.1   # PiHole via WireGuard
+      - 1.1.1.1     # Fallback jika WireGuard down
     volumes:
       - ./data/profiles:/data/profiles
       - ./data/artifacts:/data/artifacts
