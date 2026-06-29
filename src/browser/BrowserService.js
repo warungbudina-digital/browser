@@ -20,6 +20,7 @@ import { InterceptManager, matchesPattern } from './InterceptManager.js';
 import { HarRecorder } from './HarRecorder.js';
 import { EventRecorder } from './EventRecorder.js';
 import { DeviceEmulator } from './DeviceEmulator.js';
+import { ResponseTransformer, applyTransforms } from './ResponseTransformer.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -48,6 +49,7 @@ export class BrowserService {
     this.logs = new Map();
     this.traceState = { active: false, options: null };
     this.interceptManager = new InterceptManager();
+    this.responseTransformer = new ResponseTransformer();
     this.interceptorInstalled = false;
     this.harRecorder = new HarRecorder();
     this.eventRecorder = new EventRecorder();
@@ -102,6 +104,7 @@ export class BrowserService {
     this.logs.clear();
     this.harRecorder.clearAll();
     this.eventRecorder.clearAll();
+    this.responseTransformer.clear();
     this.activeDevice = null;
     this.currentTargetId = null;
     this.startedAt = null;
@@ -713,6 +716,29 @@ export class BrowserService {
     }
   }
 
+  // ── Response Transformation (Phase 24) ──────────────────────────────────────
+
+  async transformAdd(payload = {}) {
+    await this.start();
+    const rule = this.responseTransformer.add(payload);
+    await this.#ensureInterceptorInstalled();
+    return { ok: true, profileName: this.profileName, rule };
+  }
+
+  async transformList() {
+    return { ok: true, profileName: this.profileName, rules: this.responseTransformer.list() };
+  }
+
+  async transformRemove({ id } = {}) {
+    const removed = this.responseTransformer.remove(id);
+    return { ok: true, profileName: this.profileName, removed };
+  }
+
+  async transformClear() {
+    this.responseTransformer.clear();
+    return { ok: true, profileName: this.profileName };
+  }
+
   // ── Request Interception (Phase 20) ─────────────────────────────────────────
 
   async interceptAdd({ pattern, action, response, priority } = {}) {
@@ -798,18 +824,32 @@ export class BrowserService {
     if (this.interceptorInstalled) return;
     this.interceptorInstalled = true;
     await this.context.route('**/*', async (route) => {
-      const url  = route.request().url();
-      const rule = this.interceptManager.match(url);
-      if (!rule || rule.action === 'passthrough') return route.continue();
-      if (rule.action === 'block') return route.abort('blockedbyclient');
-      if (rule.action === 'mock' && rule.response) {
-        const { status = 200, contentType = 'application/json', body = '' } = rule.response;
-        return route.fulfill({
-          status,
-          contentType,
-          body: typeof body === 'string' ? body : JSON.stringify(body),
-        });
+      const url         = route.request().url();
+      const interceptRule = this.interceptManager.match(url);
+
+      if (interceptRule && interceptRule.action === 'block') {
+        return route.abort('blockedbyclient');
       }
+      if (interceptRule && interceptRule.action === 'mock' && interceptRule.response) {
+        const { status = 200, contentType = 'application/json', body = '' } = interceptRule.response;
+        return route.fulfill({ status, contentType, body: typeof body === 'string' ? body : JSON.stringify(body) });
+      }
+
+      const transformRule = this.responseTransformer.match(url);
+      if (transformRule) {
+        try {
+          const real = await route.fetch();
+          const { status, headers, body } = applyTransforms(transformRule.transforms, {
+            status:  real.status(),
+            headers: real.headers(),
+            body:    await real.text(),
+          });
+          return route.fulfill({ status, headers, body });
+        } catch {
+          return route.continue();
+        }
+      }
+
       return route.continue();
     });
   }

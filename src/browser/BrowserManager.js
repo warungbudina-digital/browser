@@ -43,6 +43,7 @@ export class BrowserManager {
       harActions:       ['har-get', 'har-clear'],
       eventActions:     ['event-list', 'event-clear', 'event-script'],
       deviceActions:    ['device-list', 'device-emulate', 'device-reset'],
+      transformActions: ['transform-add', 'transform-list', 'transform-remove', 'transform-clear'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -174,9 +175,13 @@ export class BrowserManager {
       case 'event-list':    return service.eventList(payload);
       case 'event-clear':   return service.eventClear(payload);
       case 'event-script':  return service.eventScript(payload);
-      case 'device-list':    return service.deviceList();
-      case 'device-emulate': return service.deviceEmulate(payload);
-      case 'device-reset':   return service.deviceReset(payload);
+      case 'device-list':      return service.deviceList();
+      case 'device-emulate':   return service.deviceEmulate(payload);
+      case 'device-reset':     return service.deviceReset(payload);
+      case 'transform-add':    return service.transformAdd(payload);
+      case 'transform-list':   return service.transformList();
+      case 'transform-remove': return service.transformRemove(payload);
+      case 'transform-clear':  return service.transformClear();
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
