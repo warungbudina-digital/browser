@@ -2,6 +2,8 @@ import path from 'node:path';
 import { BrowserService } from './BrowserService.js';
 import { ProfileStore } from './ProfileStore.js';
 import { assertCdpEndpointAllowed } from '../security/ssrf.js';
+import { ScriptStore } from './ScriptStore.js';
+import { runScript } from './ScriptRunner.js';
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -15,8 +17,9 @@ export class BrowserManager {
       seedProfiles: Object.fromEntries(Object.entries(config.profiles).filter(([, value]) => value)),
       defaultProfile: config.defaultProfile
     });
-    this.services = new Map();
-    this.state = null;
+    this.services     = new Map();
+    this.scriptStore  = new ScriptStore();
+    this.state        = null;
   }
 
   async init() {
@@ -33,7 +36,8 @@ export class BrowserManager {
       profileEndpoint: '/browser/profiles',
       defaultProfile: state.activeProfile,
       actions: ['status', 'start', 'stop', 'tabs', 'open', 'navigate', 'focus', 'close', 'snapshot', 'snapdiff', 'extract', 'screenshot', 'pdf', 'upload', 'download', 'trace', 'console', 'errors', 'requests', 'dialog', 'warmup', 'cookies', 'act'],
-      extractKinds: ['text', 'meta', 'links', 'full'],
+      extractKinds:  ['text', 'meta', 'links', 'full'],
+      scriptActions: ['script-save', 'script-list', 'script-get', 'script-delete', 'script-run'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -101,6 +105,32 @@ export class BrowserManager {
   }
 
   async dispatch(action, payload = {}) {
+    // Script actions that don't need a browser service
+    switch (action) {
+      case 'script-save': {
+        const entry = this.scriptStore.save(payload.name, { steps: payload.steps, description: payload.description });
+        return { ok: true, script: entry };
+      }
+      case 'script-list':
+        return { ok: true, scripts: this.scriptStore.list(), count: this.scriptStore.size() };
+      case 'script-get': {
+        const script = this.scriptStore.get(payload.name);
+        if (!script) throw new Error(`Script not found: ${payload.name}`);
+        return { ok: true, script };
+      }
+      case 'script-delete':
+        this.scriptStore.delete(payload.name);
+        return { ok: true, deleted: payload.name };
+      case 'script-run': {
+        const script = this.scriptStore.get(payload.name);
+        if (!script) throw new Error(`Script not found: ${payload.name}`);
+        const svc   = await this.#serviceFor(payload.profile || payload.profileName);
+        const actFn = (request) => svc.act({ targetId: payload.targetId, request });
+        const run   = await runScript(actFn, { steps: script.steps, stopOnError: payload.stopOnError ?? true });
+        return { ok: run.ok, name: payload.name, ...run };
+      }
+    }
+
     const service = await this.#serviceFor(payload.profile || payload.profileName);
     switch (action) {
       case 'status': return service.status();
