@@ -33,6 +33,7 @@ import { filterByMessage, filterByStack, filterSince as errorSince, filterBefore
 import { LocaleEmulator } from './LocaleEmulator.js';
 import { ResourceBlocker, VALID_RESOURCE_TYPES } from './ResourceBlocker.js';
 import { HeaderRuleManager } from './HeaderRuleManager.js';
+import { ViewportManager } from './ViewportManager.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -73,6 +74,7 @@ export class BrowserService {
     this.localeEmulator = new LocaleEmulator();
     this.resourceBlocker = new ResourceBlocker();
     this.headerRuleManager = new HeaderRuleManager();
+    this.viewportManager = new ViewportManager();
   }
 
   async start() {
@@ -1149,6 +1151,36 @@ export class BrowserService {
   async headerClear() {
     this.headerRuleManager.clear();
     return { ok: true, cleared: true };
+  }
+
+  // ── Viewport Management (Phase 37) ───────────────────────────────────────────
+
+  async viewportList() {
+    return { ok: true, viewports: this.viewportManager.list(), count: this.viewportManager.size };
+  }
+
+  async viewportAdd({ name, width, height } = {}) {
+    const spec = this.viewportManager.add(name, { width, height });
+    return { ok: true, ...spec };
+  }
+
+  async viewportRemove({ name } = {}) {
+    const removed = this.viewportManager.remove(name);
+    return { ok: true, name, removed };
+  }
+
+  async viewportSet({ targetId, name, width, height } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const spec = this.viewportManager.resolve(name != null ? name : { width, height });
+    await page.setViewportSize(spec);
+    return { ok: true, ...spec };
+  }
+
+  async viewportReset({ targetId } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const spec = this.defaultViewport || { width: 1280, height: 720 };
+    await page.setViewportSize(spec);
+    return { ok: true, reset: true, ...spec };
   }
 
   // ── Locale Emulation (Phase 34) ──────────────────────────────────────────────

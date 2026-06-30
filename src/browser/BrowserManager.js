@@ -56,6 +56,7 @@ export class BrowserManager {
       localeActions:     ['locale-list', 'locale-add', 'locale-remove', 'locale-emulate', 'locale-reset'],
       resourceActions:   ['resource-block', 'resource-unblock', 'resource-list', 'resource-clear'],
       headerActions:     ['header-add', 'header-list', 'header-remove', 'header-clear'],
+      viewportActions:   ['viewport-list', 'viewport-add', 'viewport-remove', 'viewport-set', 'viewport-reset'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -233,6 +234,11 @@ export class BrowserManager {
       case 'header-list':   return service.headerList();
       case 'header-remove': return service.headerRemove(payload);
       case 'header-clear':  return service.headerClear();
+      case 'viewport-list':   return service.viewportList();
+      case 'viewport-add':    return service.viewportAdd(payload);
+      case 'viewport-remove': return service.viewportRemove(payload);
+      case 'viewport-set':    return service.viewportSet(payload);
+      case 'viewport-reset':  return service.viewportReset(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
