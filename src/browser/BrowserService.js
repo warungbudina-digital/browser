@@ -40,6 +40,7 @@ import { InitScriptManager } from './InitScriptManager.js';
 import { flattenTree, findByRole as axFindByRole, findByName as axFindByName, findMissingNames, findHeadingOrderViolations, findDisabled, summarize as axSummarize } from './AccessibilityAudit.js';
 import { filterByUrl as navFilterByUrl, filterByTitle as navFilterByTitle, filterSince as navSince, filterBefore as navBefore, deduplicateConsecutive, groupByUrl as navGroupByUrl, summarize as navSummarize, formatText as navFormatText } from './NavigationTracker.js';
 import { filterByKey as lsFilterByKey, filterByValue as lsFilterByValue, search as lsSearch, toObject as lsToObject, fromObject as lsFromObject, summarize as lsSummarize } from './LocalStorageManager.js';
+import { ScrollManager } from './ScrollManager.js';
 import { filterByType as wsFilterByType, filterByUrl as wsFilterByUrl, filterByData as wsFilterByData, filterSince as wsSince, filterBefore as wsBefore, groupByUrl as wsGroupByUrl, summarize as wsSummarize, formatText as wsFormatText } from './WebSocketMonitor.js';
 
 const PAGE_ID = Symbol('page-id');
@@ -85,6 +86,7 @@ export class BrowserService {
     this.mediaEmulator = new MediaEmulator();
     this.basicAuthManager = new BasicAuthManager();
     this.initScriptManager = new InitScriptManager();
+    this.scrollManager = new ScrollManager();
   }
 
   async start() {
@@ -1443,6 +1445,60 @@ export class BrowserService {
     const page    = await this.#pageForTarget(targetId);
     await page.evaluate((items) => { for (const { key, value } of items) localStorage.setItem(key, value); }, entries);
     return { ok: true, targetId, count: entries.length };
+  }
+
+  // ── Scroll Manager (Phase 45) ─────────────────────────────────────────────────
+
+  async scrollGet({ targetId } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const pos  = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
+    return { ok: true, targetId, ...pos };
+  }
+
+  async scrollTo({ targetId, x = 0, y = 0 } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    await page.evaluate(([sx, sy]) => window.scrollTo(sx, sy), [x, y]);
+    const snapshot = this.scrollManager.record(x, y);
+    return { ok: true, targetId, ...snapshot };
+  }
+
+  async scrollBy({ targetId, x = 0, y = 0 } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    await page.evaluate(([dx, dy]) => window.scrollBy(dx, dy), [x, y]);
+    const pos = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
+    const snapshot = this.scrollManager.record(pos.x, pos.y);
+    return { ok: true, targetId, ...snapshot };
+  }
+
+  async scrollTop({ targetId } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const snapshot = this.scrollManager.record(0, 0);
+    return { ok: true, targetId, ...snapshot };
+  }
+
+  async scrollBottom({ targetId } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const y    = await page.evaluate(() => document.body.scrollHeight);
+    await page.evaluate((sy) => window.scrollTo(0, sy), y);
+    const snapshot = this.scrollManager.record(0, y);
+    return { ok: true, targetId, ...snapshot };
+  }
+
+  async scrollSnapshot({ targetId } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const pos  = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
+    const snapshot = this.scrollManager.record(pos.x, pos.y);
+    return { ok: true, targetId, ...snapshot };
+  }
+
+  async scrollHistory({ targetId } = {}) {
+    return { ok: true, targetId, snapshots: this.scrollManager.list(), summary: this.scrollManager.summarize() };
+  }
+
+  async scrollClear({ targetId } = {}) {
+    this.scrollManager.clear();
+    return { ok: true, targetId, cleared: true };
   }
 
   // ── Locale Emulation (Phase 34) ──────────────────────────────────────────────

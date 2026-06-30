@@ -64,6 +64,7 @@ export class BrowserManager {
       axActions:         ['ax-snapshot', 'ax-audit'],
       navActions:        ['nav-history', 'nav-summary', 'nav-clear'],
       lsActions:         ['ls-get-all', 'ls-get', 'ls-set', 'ls-set-many', 'ls-remove', 'ls-clear', 'ls-summary', 'ls-export', 'ls-import'],
+      scrollActions:     ['scroll-get', 'scroll-to', 'scroll-by', 'scroll-top', 'scroll-bottom', 'scroll-snapshot', 'scroll-history', 'scroll-clear'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -276,6 +277,14 @@ export class BrowserManager {
       case 'ls-summary':  return service.lsSummary(payload);
       case 'ls-export':   return service.lsExport(payload);
       case 'ls-import':   return service.lsImport(payload);
+      case 'scroll-get':      return service.scrollGet(payload);
+      case 'scroll-to':       return service.scrollTo(payload);
+      case 'scroll-by':       return service.scrollBy(payload);
+      case 'scroll-top':      return service.scrollTop(payload);
+      case 'scroll-bottom':   return service.scrollBottom(payload);
+      case 'scroll-snapshot': return service.scrollSnapshot(payload);
+      case 'scroll-history':  return service.scrollHistory(payload);
+      case 'scroll-clear':    return service.scrollClear(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
