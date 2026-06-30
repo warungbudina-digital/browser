@@ -45,6 +45,7 @@ import { ScrollManager } from './ScrollManager.js';
 import { CSSOverrideManager, styleElementId } from './CSSOverrideManager.js';
 import { filterByKey as idbFilterByKey, filterByStore as idbFilterByStore, summarize as idbSummarize } from './IndexedDBManager.js';
 import { filterByOp as cbFilterByOp, filterByText as cbFilterByText, filterSince as cbFilterSince, summarize as cbSummarize } from './ClipboardManager.js';
+import { filterByType as fmFilterByType, filterByName as fmFilterByName, filterRequired as fmFilterRequired, filterDisabled as fmFilterDisabled, summarize as fmSummarize } from './FormManager.js';
 import { filterByType as wsFilterByType, filterByUrl as wsFilterByUrl, filterByData as wsFilterByData, filterSince as wsSince, filterBefore as wsBefore, groupByUrl as wsGroupByUrl, summarize as wsSummarize, formatText as wsFormatText } from './WebSocketMonitor.js';
 
 const PAGE_ID = Symbol('page-id');
@@ -2006,5 +2007,160 @@ export class BrowserService {
 
   async clipboardSummary() {
     return { ok: true, summary: cbSummarize(this.clipboardHistory) };
+  }
+
+  // ── Form Manager (Phase 50) ────────────────────────────────────────────────────
+
+  async formList({ targetId } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const forms = await page.evaluate(() => {
+      function collectFields(form) {
+        return [...form.elements].map((el) => ({
+          tag:      el.tagName.toLowerCase(),
+          type:     el.type   || null,
+          name:     el.name   || null,
+          id:       el.id     || null,
+          value:    el.value,
+          checked:  (el.type === 'checkbox' || el.type === 'radio') ? el.checked : undefined,
+          disabled: el.disabled,
+          required: el.required,
+          options:  el.tagName === 'SELECT'
+            ? [...el.options].map((o) => ({ value: o.value, text: o.text, selected: o.selected }))
+            : undefined,
+        }));
+      }
+      return [...document.forms].map((form, index) => ({
+        index,
+        id:     form.id     || null,
+        name:   form.name   || null,
+        action: form.action || null,
+        method: form.method || 'get',
+        fields: collectFields(form),
+      }));
+    });
+    return { ok: true, targetId, forms, count: forms.length };
+  }
+
+  async formGet({ targetId, form: formSel = 0 } = {}) {
+    const page  = await this.#pageForTarget(targetId);
+    const result = await page.evaluate((sel) => {
+      function collectFields(form) {
+        return [...form.elements].map((el) => ({
+          tag:      el.tagName.toLowerCase(),
+          type:     el.type   || null,
+          name:     el.name   || null,
+          id:       el.id     || null,
+          value:    el.value,
+          checked:  (el.type === 'checkbox' || el.type === 'radio') ? el.checked : undefined,
+          disabled: el.disabled,
+          required: el.required,
+          options:  el.tagName === 'SELECT'
+            ? [...el.options].map((o) => ({ value: o.value, text: o.text, selected: o.selected }))
+            : undefined,
+        }));
+      }
+      const form = typeof sel === 'number'
+        ? document.forms[sel]
+        : document.forms[sel] || document.querySelector('form#' + sel) || document.querySelector('form[name="' + sel + '"]');
+      if (!form) return null;
+      return {
+        index:  [...document.forms].indexOf(form),
+        id:     form.id     || null,
+        name:   form.name   || null,
+        action: form.action || null,
+        method: form.method || 'get',
+        fields: collectFields(form),
+      };
+    }, formSel);
+    if (!result) throw new Error(`Form not found: ${formSel}`);
+    return { ok: true, targetId, form: result };
+  }
+
+  async formFill({ targetId, form: formSel = 0, fields = {} } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const filled = await page.evaluate(([sel, fieldMap]) => {
+      const form = typeof sel === 'number'
+        ? document.forms[sel]
+        : document.forms[sel] || document.querySelector('form#' + sel) || document.querySelector('form[name="' + sel + '"]');
+      if (!form) return { ok: false, error: 'form not found' };
+      const result = [];
+      for (const [fieldName, value] of Object.entries(fieldMap)) {
+        const el = form.elements[fieldName];
+        if (!el) { result.push({ name: fieldName, ok: false, error: 'field not found' }); continue; }
+        if (el.type === 'checkbox' || el.type === 'radio') {
+          el.checked = Boolean(value);
+        } else {
+          el.value = String(value);
+        }
+        el.dispatchEvent(new Event('input',  { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        result.push({ name: fieldName, ok: true });
+      }
+      return { ok: true, result };
+    }, [formSel, fields]);
+    if (!filled.ok) throw new Error(filled.error || 'formFill failed');
+    return { ok: true, targetId, result: filled.result };
+  }
+
+  async formValues({ targetId, form: formSel = 0 } = {}) {
+    const page   = await this.#pageForTarget(targetId);
+    const values = await page.evaluate((sel) => {
+      const form = typeof sel === 'number'
+        ? document.forms[sel]
+        : document.forms[sel] || document.querySelector('form#' + sel) || document.querySelector('form[name="' + sel + '"]');
+      if (!form) return null;
+      const result = {};
+      for (const el of form.elements) {
+        if (!el.name) continue;
+        if (el.type === 'checkbox' || el.type === 'radio') result[el.name] = el.checked;
+        else result[el.name] = el.value;
+      }
+      return result;
+    }, formSel);
+    if (!values) throw new Error(`Form not found: ${formSel}`);
+    return { ok: true, targetId, values };
+  }
+
+  async formSubmit({ targetId, form: formSel = 0 } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const ok   = await page.evaluate((sel) => {
+      const form = typeof sel === 'number'
+        ? document.forms[sel]
+        : document.forms[sel] || document.querySelector('form#' + sel) || document.querySelector('form[name="' + sel + '"]');
+      if (!form) return false;
+      form.submit();
+      return true;
+    }, formSel);
+    if (!ok) throw new Error(`Form not found: ${formSel}`);
+    return { ok: true, targetId };
+  }
+
+  async formReset({ targetId, form: formSel = 0 } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const ok   = await page.evaluate((sel) => {
+      const form = typeof sel === 'number'
+        ? document.forms[sel]
+        : document.forms[sel] || document.querySelector('form#' + sel) || document.querySelector('form[name="' + sel + '"]');
+      if (!form) return false;
+      form.reset();
+      return true;
+    }, formSel);
+    if (!ok) throw new Error(`Form not found: ${formSel}`);
+    return { ok: true, targetId, reset: true };
+  }
+
+  async formFilter({ targetId, form: formSel = 0, type, name, required, disabled } = {}) {
+    const { form } = await this.formGet({ targetId, form: formSel });
+    let fields = form.fields;
+    if (type     != null) fields = fmFilterByType(fields, type);
+    if (name     != null) fields = fmFilterByName(fields, name);
+    if (required)         fields = fmFilterRequired(fields);
+    if (disabled)         fields = fmFilterDisabled(fields);
+    return { ok: true, targetId, fields, count: fields.length };
+  }
+
+  async formSummary({ targetId, form: formSel = 0 } = {}) {
+    const { form } = await this.formGet({ targetId, form: formSel });
+    return { ok: true, targetId, summary: fmSummarize(form.fields) };
   }
 }

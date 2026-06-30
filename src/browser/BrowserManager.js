@@ -69,6 +69,7 @@ export class BrowserManager {
       cssActions:        ['css-add', 'css-remove', 'css-list', 'css-clear', 'css-inject'],
       idbActions:        ['idb-databases', 'idb-stores', 'idb-get-all', 'idb-get', 'idb-set', 'idb-delete', 'idb-clear', 'idb-export', 'idb-import', 'idb-summary'],
       clipboardActions:  ['clipboard-write', 'clipboard-read', 'clipboard-clear', 'clipboard-history', 'clipboard-history-clear', 'clipboard-summary'],
+      formActions:       ['form-list', 'form-get', 'form-fill', 'form-values', 'form-submit', 'form-reset', 'form-filter', 'form-summary'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -319,6 +320,14 @@ export class BrowserManager {
       case 'clipboard-history':       return service.clipboardGetHistory(payload);
       case 'clipboard-history-clear': return service.clipboardClearHistory();
       case 'clipboard-summary':       return service.clipboardSummary();
+      case 'form-list':    return service.formList(payload);
+      case 'form-get':     return service.formGet(payload);
+      case 'form-fill':    return service.formFill(payload);
+      case 'form-values':  return service.formValues(payload);
+      case 'form-submit':  return service.formSubmit(payload);
+      case 'form-reset':   return service.formReset(payload);
+      case 'form-filter':  return service.formFilter(payload);
+      case 'form-summary': return service.formSummary(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
