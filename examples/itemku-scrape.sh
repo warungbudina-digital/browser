@@ -24,7 +24,7 @@ req "{\"action\":\"start\",\"profile\":\"$PROFILE\"}"
 
 echo ""
 echo "=== [2/4] Buka itemku.com ==="
-req "{\"action\":\"open\",\"profile\":\"$PROFILE\",\"url\":\"https://www.itemku.com/g/game-currency\"}"
+req "{\"action\":\"open\",\"profile\":\"$PROFILE\",\"url\":\"https://www.itemku.com/en/g/mobile-legends/akun\"}"
 
 echo ""
 echo "=== [3/4] Tunggu halaman load (3 detik) ==="
@@ -32,35 +32,27 @@ sleep 3
 
 echo ""
 echo "=== [4/4] Ekstrak daftar produk ==="
-req "{
-  \"action\": \"act\",
-  \"profile\": \"$PROFILE\",
-  \"request\": {
-    \"kind\": \"evaluate\",
-    \"expression\": \"(function() {
-      var products = [];
-      var cards = document.querySelectorAll('[class*=product-card],[class*=ProductCard],[data-testid*=product],[class*=item-card]');
-      if (!cards.length) {
-        cards = document.querySelectorAll('a[href*=/p/]');
-      }
-      cards.forEach(function(el) {
-        var title = el.querySelector('[class*=title],[class*=name],[class*=Title]');
-        var price = el.querySelector('[class*=price],[class*=Price]');
-        var seller = el.querySelector('[class*=seller],[class*=shop],[class*=Seller]');
-        var img = el.querySelector('img');
-        var link = el.tagName === 'A' ? el.href : (el.querySelector('a') || {}).href;
-        products.push({
-          title: title ? title.innerText.trim() : null,
-          price: price ? price.innerText.trim() : null,
-          seller: seller ? seller.innerText.trim() : null,
-          image: img ? img.src : null,
-          url: link || null
-        });
-      });
-      return { count: products.length, products: products.slice(0, 20) };
-    }())\"
-  }
-}"
+EXTRACT_FN='() => {
+  var products = [];
+  var cards = document.querySelectorAll("a[href*=\"/product/\"]");
+  cards.forEach(function(el) {
+    var title = el.querySelector("[id*=card-product][id*=-name]");
+    var price = el.querySelector("[id*=card-product][id*=-price]");
+    var stats = el.querySelector("[id*=card-product][id*=-statistic]");
+    var img = el.querySelector("img");
+    products.push({
+      title: title ? title.innerText.trim() : null,
+      price: price ? price.innerText.trim() : null,
+      stats: stats ? stats.innerText.trim().replace(/\n/g, " ") : null,
+      image: img ? img.src : null,
+      url: el.href || null
+    });
+  });
+  return { count: products.length, products: products.slice(0, 20) };
+}'
+PAYLOAD=$(jq -n --arg profile "$PROFILE" --arg fn "$EXTRACT_FN" \
+  '{action: "act", profile: $profile, request: {kind: "evaluate", fn: $fn}}')
+req "$PAYLOAD"
 
 echo ""
 echo "=== Selesai ==="
