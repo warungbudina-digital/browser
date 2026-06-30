@@ -58,6 +58,7 @@ export class BrowserManager {
       headerActions:     ['header-add', 'header-list', 'header-remove', 'header-clear'],
       viewportActions:   ['viewport-list', 'viewport-add', 'viewport-remove', 'viewport-set', 'viewport-reset'],
       mediaActions:      ['media-list', 'media-get', 'media-set', 'media-reset'],
+      authActions:       ['auth-add', 'auth-list', 'auth-remove', 'auth-clear'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -244,6 +245,10 @@ export class BrowserManager {
       case 'media-get':   return service.mediaGet();
       case 'media-set':   return service.mediaSet(payload);
       case 'media-reset': return service.mediaReset(payload);
+      case 'auth-add':    return service.authAdd(payload);
+      case 'auth-list':   return service.authList();
+      case 'auth-remove': return service.authRemove(payload);
+      case 'auth-clear':  return service.authClear();
       default:
         throw new Error(`Unsupported action: ${action}`);
     }

@@ -35,6 +35,7 @@ import { ResourceBlocker, VALID_RESOURCE_TYPES } from './ResourceBlocker.js';
 import { HeaderRuleManager } from './HeaderRuleManager.js';
 import { ViewportManager } from './ViewportManager.js';
 import { MediaEmulator, MEDIA_FEATURES, VALID_MEDIA_TYPES } from './MediaEmulator.js';
+import { BasicAuthManager } from './BasicAuthManager.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -77,6 +78,7 @@ export class BrowserService {
     this.headerRuleManager = new HeaderRuleManager();
     this.viewportManager = new ViewportManager();
     this.mediaEmulator = new MediaEmulator();
+    this.basicAuthManager = new BasicAuthManager();
   }
 
   async start() {
@@ -949,8 +951,12 @@ export class BrowserService {
         }
       }
 
-      const extraHeaders = this.headerRuleManager.match(url);
-      if (extraHeaders) {
+      const extraHeaders  = this.headerRuleManager.match(url) || {};
+      const authInfo      = this.basicAuthManager.match(url);
+      if (authInfo && !route.request().headers()['authorization']) {
+        extraHeaders['authorization'] = `Basic ${authInfo.token}`;
+      }
+      if (Object.keys(extraHeaders).length > 0) {
         return route.continue({ headers: { ...route.request().headers(), ...extraHeaders } });
       }
 
@@ -1212,6 +1218,27 @@ export class BrowserService {
     await cdp.send('Emulation.setEmulatedMedia', { media: '', features: [] });
     await cdp.detach();
     return { ok: true, reset: true };
+  }
+
+  // ── Basic Auth (Phase 39) ─────────────────────────────────────────────────────
+
+  async authAdd({ pattern, username, password } = {}) {
+    const entry = this.basicAuthManager.add({ pattern, username, password });
+    return { ok: true, ...entry };
+  }
+
+  async authList() {
+    return { ok: true, credentials: this.basicAuthManager.list(), count: this.basicAuthManager.size };
+  }
+
+  async authRemove({ id } = {}) {
+    const removed = this.basicAuthManager.remove(id);
+    return { ok: true, id, removed };
+  }
+
+  async authClear() {
+    this.basicAuthManager.clear();
+    return { ok: true, cleared: true };
   }
 
   // ── Locale Emulation (Phase 34) ──────────────────────────────────────────────
