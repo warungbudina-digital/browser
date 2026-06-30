@@ -34,6 +34,7 @@ import { LocaleEmulator } from './LocaleEmulator.js';
 import { ResourceBlocker, VALID_RESOURCE_TYPES } from './ResourceBlocker.js';
 import { HeaderRuleManager } from './HeaderRuleManager.js';
 import { ViewportManager } from './ViewportManager.js';
+import { MediaEmulator, MEDIA_FEATURES, VALID_MEDIA_TYPES } from './MediaEmulator.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -75,6 +76,7 @@ export class BrowserService {
     this.resourceBlocker = new ResourceBlocker();
     this.headerRuleManager = new HeaderRuleManager();
     this.viewportManager = new ViewportManager();
+    this.mediaEmulator = new MediaEmulator();
   }
 
   async start() {
@@ -1181,6 +1183,35 @@ export class BrowserService {
     const spec = this.defaultViewport || { width: 1280, height: 720 };
     await page.setViewportSize(spec);
     return { ok: true, reset: true, ...spec };
+  }
+
+  // ── Media Emulation (Phase 38) ────────────────────────────────────────────────
+
+  async mediaList() {
+    return { ok: true, features: MEDIA_FEATURES, mediaTypes: [...VALID_MEDIA_TYPES] };
+  }
+
+  async mediaGet() {
+    return { ok: true, ...this.mediaEmulator.toCDP() };
+  }
+
+  async mediaSet({ targetId, feature, value, mediaType } = {}) {
+    if (feature != null) this.mediaEmulator.setFeature(feature, value);
+    if (mediaType != null) this.mediaEmulator.setMediaType(mediaType);
+    const page = await this.#pageForTarget(targetId);
+    const cdp  = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setEmulatedMedia', this.mediaEmulator.toCDP());
+    await cdp.detach();
+    return { ok: true, ...this.mediaEmulator.toCDP() };
+  }
+
+  async mediaReset({ targetId } = {}) {
+    this.mediaEmulator.reset();
+    const page = await this.#pageForTarget(targetId);
+    const cdp  = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setEmulatedMedia', { media: '', features: [] });
+    await cdp.detach();
+    return { ok: true, reset: true };
   }
 
   // ── Locale Emulation (Phase 34) ──────────────────────────────────────────────

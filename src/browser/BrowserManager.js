@@ -57,6 +57,7 @@ export class BrowserManager {
       resourceActions:   ['resource-block', 'resource-unblock', 'resource-list', 'resource-clear'],
       headerActions:     ['header-add', 'header-list', 'header-remove', 'header-clear'],
       viewportActions:   ['viewport-list', 'viewport-add', 'viewport-remove', 'viewport-set', 'viewport-reset'],
+      mediaActions:      ['media-list', 'media-get', 'media-set', 'media-reset'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -239,6 +240,10 @@ export class BrowserManager {
       case 'viewport-remove': return service.viewportRemove(payload);
       case 'viewport-set':    return service.viewportSet(payload);
       case 'viewport-reset':  return service.viewportReset(payload);
+      case 'media-list':  return service.mediaList();
+      case 'media-get':   return service.mediaGet();
+      case 'media-set':   return service.mediaSet(payload);
+      case 'media-reset': return service.mediaReset(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
