@@ -54,6 +54,7 @@ export class BrowserManager {
       metricsActions:    ['page-metrics'],
       errorFilterOps:    ['message', 'stack', 'since', 'before', 'group', 'deduplicate', 'summary', 'format'],
       localeActions:     ['locale-list', 'locale-add', 'locale-remove', 'locale-emulate', 'locale-reset'],
+      resourceActions:   ['resource-block', 'resource-unblock', 'resource-list', 'resource-clear'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -222,7 +223,11 @@ export class BrowserManager {
       case 'locale-add':     return service.localeAdd(payload);
       case 'locale-remove':  return service.localeRemove(payload);
       case 'locale-emulate': return service.localeEmulate(payload);
-      case 'locale-reset':   return service.localeReset(payload);
+      case 'locale-reset':     return service.localeReset(payload);
+      case 'resource-block':   return service.resourceBlock(payload);
+      case 'resource-unblock': return service.resourceUnblock(payload);
+      case 'resource-list':    return service.resourceList();
+      case 'resource-clear':   return service.resourceClear();
       default:
         throw new Error(`Unsupported action: ${action}`);
     }

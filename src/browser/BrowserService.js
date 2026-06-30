@@ -31,6 +31,7 @@ import { filterByMethod, filterByUrl, filterByStatus, filterByStatusRange, filte
 import { parseNavigationTiming, parsePaintTiming, mergeMetrics } from './PageMetrics.js';
 import { filterByMessage, filterByStack, filterSince as errorSince, filterBefore as errorBefore, groupByOrigin, deduplicateByMessage, summarize as errorSummarize } from './ErrorFilter.js';
 import { LocaleEmulator } from './LocaleEmulator.js';
+import { ResourceBlocker, VALID_RESOURCE_TYPES } from './ResourceBlocker.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -69,6 +70,7 @@ export class BrowserService {
     this.networkThrottle = new NetworkThrottleManager();
     this.permissionManager = new PermissionManager();
     this.localeEmulator = new LocaleEmulator();
+    this.resourceBlocker = new ResourceBlocker();
   }
 
   async start() {
@@ -911,6 +913,10 @@ export class BrowserService {
     if (this.interceptorInstalled) return;
     this.interceptorInstalled = true;
     await this.context.route('**/*', async (route) => {
+      if (this.resourceBlocker.isBlocked(route.request().resourceType())) {
+        return route.abort('blockedbyclient');
+      }
+
       const url         = route.request().url();
       const interceptRule = this.interceptManager.match(url);
 
@@ -1093,6 +1099,28 @@ export class BrowserService {
   }
 
   // ── Page Metrics (Phase 32) ───────────────────────────────────────────────────
+
+  // ── Resource Blocking (Phase 35) ─────────────────────────────────────────────
+
+  async resourceBlock({ types } = {}) {
+    const blocked = this.resourceBlocker.block(types);
+    await this.#ensureInterceptorInstalled();
+    return { ok: true, blocked };
+  }
+
+  async resourceUnblock({ types } = {}) {
+    const blocked = this.resourceBlocker.unblock(types);
+    return { ok: true, blocked };
+  }
+
+  async resourceList() {
+    return { ok: true, blocked: this.resourceBlocker.blockedTypes(), validTypes: [...VALID_RESOURCE_TYPES] };
+  }
+
+  async resourceClear() {
+    this.resourceBlocker.clear();
+    return { ok: true, blocked: [] };
+  }
 
   // ── Locale Emulation (Phase 34) ──────────────────────────────────────────────
 
