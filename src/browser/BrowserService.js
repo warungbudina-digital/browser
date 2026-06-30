@@ -48,6 +48,7 @@ import { filterByOp as cbFilterByOp, filterByText as cbFilterByText, filterSince
 import { filterByType as fmFilterByType, filterByName as fmFilterByName, filterRequired as fmFilterRequired, filterDisabled as fmFilterDisabled, summarize as fmSummarize } from './FormManager.js';
 import { filterByScope as swFilterByScope, filterByState as swFilterByState, findByScope as swFindByScope, summarize as swSummarize } from './ServiceWorkerManager.js';
 import { filterByName as caFilterByName, filterByUrl as caFilterByUrl, summarize as caSummarize } from './CacheAPIManager.js';
+import { filterByTag as mpFilterByTag, filterByState as mpFilterByState, filterMuted as mpFilterMuted, summarize as mpSummarize } from './MediaPlayerManager.js';
 import { filterByType as wsFilterByType, filterByUrl as wsFilterByUrl, filterByData as wsFilterByData, filterSince as wsSince, filterBefore as wsBefore, groupByUrl as wsGroupByUrl, summarize as wsSummarize, formatText as wsFormatText } from './WebSocketMonitor.js';
 
 const PAGE_ID = Symbol('page-id');
@@ -2337,5 +2338,117 @@ export class BrowserService {
       return result;
     });
     return { ok: true, targetId, summary: caSummarize(cacheMap) };
+  }
+
+  // ── Media Player Manager (Phase 53) ─────────────────────────────────────────
+
+  async playerList({ targetId } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const elements = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll('audio, video')).map((el, i) => ({
+        tag: el.tagName.toLowerCase(),
+        index: i,
+        src: el.currentSrc || el.src || '',
+        currentTime: el.currentTime,
+        duration: el.duration || 0,
+        paused: el.paused,
+        ended: el.ended,
+        muted: el.muted,
+        volume: el.volume,
+        readyState: el.readyState,
+      }));
+    });
+    return { ok: true, targetId, elements, count: elements.length };
+  }
+
+  async playerPlay({ targetId, selector } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const result = await page.evaluate(async (sel) => {
+      const el = sel ? document.querySelector(sel) : document.querySelector('audio, video');
+      if (!el) return { played: false };
+      await el.play();
+      return { played: true, src: el.currentSrc || el.src || '' };
+    }, selector || null);
+    return { ok: true, targetId, ...result };
+  }
+
+  async playerPause({ targetId, selector } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const result = await page.evaluate((sel) => {
+      const el = sel ? document.querySelector(sel) : document.querySelector('audio, video');
+      if (!el) return { paused: false };
+      el.pause();
+      return { paused: true, src: el.currentSrc || el.src || '' };
+    }, selector || null);
+    return { ok: true, targetId, ...result };
+  }
+
+  async playerSeek({ targetId, selector, time = 0 } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const result = await page.evaluate(({ sel, t }) => {
+      const el = sel ? document.querySelector(sel) : document.querySelector('audio, video');
+      if (!el) return { seeked: false };
+      el.currentTime = t;
+      return { seeked: true, currentTime: el.currentTime, src: el.currentSrc || el.src || '' };
+    }, { sel: selector || null, t: time });
+    return { ok: true, targetId, ...result };
+  }
+
+  async playerMute({ targetId, selector } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const result = await page.evaluate((sel) => {
+      const el = sel ? document.querySelector(sel) : document.querySelector('audio, video');
+      if (!el) return { muted: false };
+      el.muted = true;
+      return { muted: true, src: el.currentSrc || el.src || '' };
+    }, selector || null);
+    return { ok: true, targetId, ...result };
+  }
+
+  async playerUnmute({ targetId, selector } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const result = await page.evaluate((sel) => {
+      const el = sel ? document.querySelector(sel) : document.querySelector('audio, video');
+      if (!el) return { unmuted: false };
+      el.muted = false;
+      return { unmuted: true, src: el.currentSrc || el.src || '' };
+    }, selector || null);
+    return { ok: true, targetId, ...result };
+  }
+
+  async playerVolume({ targetId, selector, volume = 1.0 } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const result = await page.evaluate(({ sel, vol }) => {
+      const el = sel ? document.querySelector(sel) : document.querySelector('audio, video');
+      if (!el) return { set: false };
+      el.volume = Math.max(0, Math.min(1, vol));
+      return { set: true, volume: el.volume, src: el.currentSrc || el.src || '' };
+    }, { sel: selector || null, vol: volume });
+    return { ok: true, targetId, ...result };
+  }
+
+  async playerState({ targetId, selector } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const state = await page.evaluate((sel) => {
+      const el = sel ? document.querySelector(sel) : document.querySelector('audio, video');
+      if (!el) return null;
+      return {
+        tag: el.tagName.toLowerCase(),
+        src: el.currentSrc || el.src || '',
+        currentTime: el.currentTime,
+        duration: el.duration || 0,
+        paused: el.paused,
+        ended: el.ended,
+        muted: el.muted,
+        volume: el.volume,
+        readyState: el.readyState,
+      };
+    }, selector || null);
+    return { ok: true, targetId, state };
+  }
+
+  async playerSummary({ targetId } = {}) {
+    const { elements } = await this.playerList({ targetId });
+    return { ok: true, targetId, summary: mpSummarize(elements) };
   }
 }

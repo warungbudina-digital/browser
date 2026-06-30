@@ -72,6 +72,7 @@ export class BrowserManager {
       formActions:       ['form-list', 'form-get', 'form-fill', 'form-values', 'form-submit', 'form-reset', 'form-filter', 'form-summary'],
       swActions:         ['sw-list', 'sw-unregister', 'sw-unregister-all', 'sw-update', 'sw-summary'],
       cacheActions:      ['cache-list', 'cache-entries', 'cache-match', 'cache-put', 'cache-delete', 'cache-clear', 'cache-drop', 'cache-export', 'cache-summary'],
+      playerActions:     ['player-list', 'player-play', 'player-pause', 'player-seek', 'player-mute', 'player-unmute', 'player-volume', 'player-state', 'player-summary'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -344,6 +345,15 @@ export class BrowserManager {
       case 'cache-drop':        return service.cacheDrop(payload);
       case 'cache-export':      return service.cacheExport(payload);
       case 'cache-summary':     return service.cacheSummary(payload);
+      case 'player-list':       return service.playerList(payload);
+      case 'player-play':       return service.playerPlay(payload);
+      case 'player-pause':      return service.playerPause(payload);
+      case 'player-seek':       return service.playerSeek(payload);
+      case 'player-mute':       return service.playerMute(payload);
+      case 'player-unmute':     return service.playerUnmute(payload);
+      case 'player-volume':     return service.playerVolume(payload);
+      case 'player-state':      return service.playerState(payload);
+      case 'player-summary':    return service.playerSummary(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
