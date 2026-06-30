@@ -48,11 +48,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=deps /ms-playwright /ms-playwright
+COPY src/browser-server.js /app/browser-server.js
 
 EXPOSE 9222
 
-# Find and launch patchright Chromium with remote debugging
-CMD ["sh", "-c", "exec $(find /ms-playwright -name chrome -type f | head -1) --no-sandbox --disable-gpu --disable-dev-shm-usage --headless=new --remote-debugging-address=0.0.0.0 --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-data"]
+# Node.js CDP proxy: spawns Chrome on 127.0.0.1:9223, proxies+rewrites URLs on 0.0.0.0:9222.
+# Needed because patchright's Chromium ignores --remote-debugging-address=0.0.0.0.
+CMD ["node", "/app/browser-server.js"]
 
 # ── Stage 3: runtime — slim API service (no bundled Chromium) ─────────────────
 FROM node:22.16-bookworm-slim AS runtime
@@ -65,6 +67,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
+COPY package.json ./package.json
 COPY src ./src
 COPY db ./db
 COPY examples ./examples
