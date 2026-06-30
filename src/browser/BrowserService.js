@@ -37,6 +37,7 @@ import { ViewportManager } from './ViewportManager.js';
 import { MediaEmulator, MEDIA_FEATURES, VALID_MEDIA_TYPES } from './MediaEmulator.js';
 import { BasicAuthManager } from './BasicAuthManager.js';
 import { InitScriptManager } from './InitScriptManager.js';
+import { flattenTree, findByRole as axFindByRole, findByName as axFindByName, findMissingNames, findHeadingOrderViolations, findDisabled, summarize as axSummarize } from './AccessibilityAudit.js';
 import { filterByType as wsFilterByType, filterByUrl as wsFilterByUrl, filterByData as wsFilterByData, filterSince as wsSince, filterBefore as wsBefore, groupByUrl as wsGroupByUrl, summarize as wsSummarize, formatText as wsFormatText } from './WebSocketMonitor.js';
 
 const PAGE_ID = Symbol('page-id');
@@ -1309,6 +1310,34 @@ export class BrowserService {
     const page = await this.#pageForTarget(targetId);
     const result = await page.evaluate(script);
     return { ok: true, result: result ?? null };
+  }
+
+  // ── Accessibility Audit (Phase 42) ───────────────────────────────────────────
+
+  async axSnapshot({ targetId, role, name: nameFilter } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const root = await page.accessibility.snapshot();
+    let nodes  = flattenTree(root);
+    if (role       != null) nodes = axFindByRole(nodes, role);
+    if (nameFilter != null) nodes = axFindByName(nodes, nameFilter);
+    return { ok: true, targetId, nodes, count: nodes.length };
+  }
+
+  async axAudit({ targetId } = {}) {
+    const page     = await this.#pageForTarget(targetId);
+    const root     = await page.accessibility.snapshot();
+    const nodes    = flattenTree(root);
+    const summary  = axSummarize(nodes);
+    const disabled = findDisabled(nodes);
+    return {
+      ok: true,
+      targetId,
+      total:             summary.total,
+      byRole:            summary.byRole,
+      missingNames:      summary.missingNames,
+      headingViolations: summary.headingViolations,
+      disabled,
+    };
   }
 
   // ── Locale Emulation (Phase 34) ──────────────────────────────────────────────
