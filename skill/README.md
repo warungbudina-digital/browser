@@ -6,8 +6,10 @@ Referensi skill eksternal yang berpotensi diintegrasikan ke project ini.
 
 ```
 skill/
-├── tiktok-uploader/          # v0.1.0 — upload video ke TikTok via browser automation
-└── tiktok-growth-os/         # v3.0.0 — content strategy, hooks, scripts, analytics
+├── tiktok-uploader/           # v0.1.0 — upload video ke TikTok via browser automation
+├── tiktok-growth-os/          # v3.0.0 — content strategy, hooks, scripts, analytics
+├── facebook-page/             # v1.0.16 — Meta Graph API v25.0 page manager
+└── social-media-scheduler/    # v1.0.0 — AI content calendar & platform-optimized drafting
 ```
 
 ---
@@ -78,12 +80,39 @@ skill/
 
 ---
 
+---
+
+## social-media-scheduler (v1.0.0)
+
+**Sumber:** ClawHub / 1kalin
+
+**Fungsi:** Pure AI prompt skill — content calendar, platform-optimized drafting, content pillars, repurposing map, hashtag strategy.
+
+**Mekanisme:**
+- Tidak ada kode — hanya `SKILL.md` yang berisi system prompt untuk model AI
+- Output: Markdown terstruktur, siap copy-paste, dengan character count per platform
+- Platform: Twitter/X, LinkedIn, Instagram, TikTok, Facebook
+- 6 content pillars: Educational, BTS, Social Proof, Entertainment, Promotional, Community
+
+**Rencana integrasi:**
+- Inject `SKILL.md` sebagai system prompt ke Claude API call untuk session content planning
+- Bisa jadi route `POST /content/plan` yang forward ke Claude API → hasilnya di-pipe ke publisher
+- Berperan sebagai **content generation layer** sebelum facebook-page / tiktok-uploader
+
+**Catatan:** Output teks/markdown — butuh parsing untuk extract structured data (tanggal, platform, teks) sebelum bisa diotomasi ke publisher.
+
+**File kunci:** `SKILL.md`, `README.md`
+
+---
+
 ## Pipeline potensial
 
 ```
-tiktok-growth-os          → generate hooks + script + caption
+social-media-scheduler    → AI generate: calendar, caption, hashtag, CTA   ← NEW
     ↓
-facebook-page             → post ke Facebook Page via Graph API   ← NEW
+tiktok-growth-os          → generate hooks + script tambahan
+    ↓
+facebook-page             → post ke Facebook Page via Graph API
 tiktok-uploader           → upload video ke TikTok
     ↓
 full-tool-browser         → scrape metrics dari kedua platform
