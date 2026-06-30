@@ -55,6 +55,7 @@ export class BrowserManager {
       errorFilterOps:    ['message', 'stack', 'since', 'before', 'group', 'deduplicate', 'summary', 'format'],
       localeActions:     ['locale-list', 'locale-add', 'locale-remove', 'locale-emulate', 'locale-reset'],
       resourceActions:   ['resource-block', 'resource-unblock', 'resource-list', 'resource-clear'],
+      headerActions:     ['header-add', 'header-list', 'header-remove', 'header-clear'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -228,6 +229,10 @@ export class BrowserManager {
       case 'resource-unblock': return service.resourceUnblock(payload);
       case 'resource-list':    return service.resourceList();
       case 'resource-clear':   return service.resourceClear();
+      case 'header-add':    return service.headerAdd(payload);
+      case 'header-list':   return service.headerList();
+      case 'header-remove': return service.headerRemove(payload);
+      case 'header-clear':  return service.headerClear();
       default:
         throw new Error(`Unsupported action: ${action}`);
     }

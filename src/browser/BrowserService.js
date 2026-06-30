@@ -32,6 +32,7 @@ import { parseNavigationTiming, parsePaintTiming, mergeMetrics } from './PageMet
 import { filterByMessage, filterByStack, filterSince as errorSince, filterBefore as errorBefore, groupByOrigin, deduplicateByMessage, summarize as errorSummarize } from './ErrorFilter.js';
 import { LocaleEmulator } from './LocaleEmulator.js';
 import { ResourceBlocker, VALID_RESOURCE_TYPES } from './ResourceBlocker.js';
+import { HeaderRuleManager } from './HeaderRuleManager.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -71,6 +72,7 @@ export class BrowserService {
     this.permissionManager = new PermissionManager();
     this.localeEmulator = new LocaleEmulator();
     this.resourceBlocker = new ResourceBlocker();
+    this.headerRuleManager = new HeaderRuleManager();
   }
 
   async start() {
@@ -943,6 +945,11 @@ export class BrowserService {
         }
       }
 
+      const extraHeaders = this.headerRuleManager.match(url);
+      if (extraHeaders) {
+        return route.continue({ headers: { ...route.request().headers(), ...extraHeaders } });
+      }
+
       return route.continue();
     });
   }
@@ -1120,6 +1127,28 @@ export class BrowserService {
   async resourceClear() {
     this.resourceBlocker.clear();
     return { ok: true, blocked: [] };
+  }
+
+  // ── Header Injection (Phase 36) ───────────────────────────────────────────────
+
+  async headerAdd({ pattern, headers, priority } = {}) {
+    const rule = this.headerRuleManager.add({ pattern, headers, priority });
+    await this.#ensureInterceptorInstalled();
+    return { ok: true, rule };
+  }
+
+  async headerList() {
+    return { ok: true, rules: this.headerRuleManager.list(), count: this.headerRuleManager.size };
+  }
+
+  async headerRemove({ id } = {}) {
+    const removed = this.headerRuleManager.remove(id);
+    return { ok: true, removed, id };
+  }
+
+  async headerClear() {
+    this.headerRuleManager.clear();
+    return { ok: true, cleared: true };
   }
 
   // ── Locale Emulation (Phase 34) ──────────────────────────────────────────────
