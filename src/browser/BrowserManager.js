@@ -71,6 +71,7 @@ export class BrowserManager {
       clipboardActions:  ['clipboard-write', 'clipboard-read', 'clipboard-clear', 'clipboard-history', 'clipboard-history-clear', 'clipboard-summary'],
       formActions:       ['form-list', 'form-get', 'form-fill', 'form-values', 'form-submit', 'form-reset', 'form-filter', 'form-summary'],
       swActions:         ['sw-list', 'sw-unregister', 'sw-unregister-all', 'sw-update', 'sw-summary'],
+      cacheActions:      ['cache-list', 'cache-entries', 'cache-match', 'cache-put', 'cache-delete', 'cache-clear', 'cache-drop', 'cache-export', 'cache-summary'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -334,6 +335,15 @@ export class BrowserManager {
       case 'sw-unregister-all': return service.swUnregisterAll(payload);
       case 'sw-update':         return service.swUpdate(payload);
       case 'sw-summary':        return service.swSummary(payload);
+      case 'cache-list':        return service.cacheList(payload);
+      case 'cache-entries':     return service.cacheEntries(payload);
+      case 'cache-match':       return service.cacheMatch(payload);
+      case 'cache-put':         return service.cachePut(payload);
+      case 'cache-delete':      return service.cacheDelete(payload);
+      case 'cache-clear':       return service.cacheClear(payload);
+      case 'cache-drop':        return service.cacheDrop(payload);
+      case 'cache-export':      return service.cacheExport(payload);
+      case 'cache-summary':     return service.cacheSummary(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }

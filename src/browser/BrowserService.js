@@ -47,6 +47,7 @@ import { filterByKey as idbFilterByKey, filterByStore as idbFilterByStore, summa
 import { filterByOp as cbFilterByOp, filterByText as cbFilterByText, filterSince as cbFilterSince, summarize as cbSummarize } from './ClipboardManager.js';
 import { filterByType as fmFilterByType, filterByName as fmFilterByName, filterRequired as fmFilterRequired, filterDisabled as fmFilterDisabled, summarize as fmSummarize } from './FormManager.js';
 import { filterByScope as swFilterByScope, filterByState as swFilterByState, findByScope as swFindByScope, summarize as swSummarize } from './ServiceWorkerManager.js';
+import { filterByName as caFilterByName, filterByUrl as caFilterByUrl, summarize as caSummarize } from './CacheAPIManager.js';
 import { filterByType as wsFilterByType, filterByUrl as wsFilterByUrl, filterByData as wsFilterByData, filterSince as wsSince, filterBefore as wsBefore, groupByUrl as wsGroupByUrl, summarize as wsSummarize, formatText as wsFormatText } from './WebSocketMonitor.js';
 
 const PAGE_ID = Symbol('page-id');
@@ -2224,5 +2225,117 @@ export class BrowserService {
   async swSummary({ targetId } = {}) {
     const { registrations } = await this.swList({ targetId });
     return { ok: true, targetId, summary: swSummarize(registrations) };
+  }
+
+  // ── Cache API Manager (Phase 52) ────────────────────────────────────────────
+
+  async cacheList({ targetId } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const names = await page.evaluate(async () => {
+      if (!self.caches) return [];
+      return self.caches.keys();
+    });
+    return { ok: true, targetId, names, count: names.length };
+  }
+
+  async cacheEntries({ targetId, name } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const urls = await page.evaluate(async (cacheName) => {
+      if (!self.caches) return [];
+      const cache = await self.caches.open(cacheName);
+      const keys = await cache.keys();
+      return keys.map((r) => r.url);
+    }, name);
+    return { ok: true, targetId, name, urls, count: urls.length };
+  }
+
+  async cacheMatch({ targetId, name, url } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const result = await page.evaluate(async ({ cacheName, reqUrl }) => {
+      if (!self.caches) return { found: false };
+      const cache = await self.caches.open(cacheName);
+      const response = await cache.match(reqUrl);
+      if (!response) return { found: false };
+      const headers = {};
+      response.headers.forEach((v, k) => { headers[k] = v; });
+      return { found: true, status: response.status, headers };
+    }, { cacheName: name, reqUrl: url });
+    return { ok: true, targetId, name, url, ...result };
+  }
+
+  async cachePut({ targetId, name, url, body = '', status = 200, headers = {} } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    await page.evaluate(async ({ cacheName, reqUrl, resBody, resStatus, resHeaders }) => {
+      if (!self.caches) throw new Error('Cache API not available');
+      const cache = await self.caches.open(cacheName);
+      const response = new Response(resBody, { status: resStatus, headers: resHeaders });
+      await cache.put(reqUrl, response);
+    }, { cacheName: name, reqUrl: url, resBody: body, resStatus: status, resHeaders: headers });
+    return { ok: true, targetId, name, url };
+  }
+
+  async cacheDelete({ targetId, name, url } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const deleted = await page.evaluate(async ({ cacheName, reqUrl }) => {
+      if (!self.caches) return false;
+      const cache = await self.caches.open(cacheName);
+      return cache.delete(reqUrl);
+    }, { cacheName: name, reqUrl: url });
+    return { ok: true, targetId, name, url, deleted };
+  }
+
+  async cacheClear({ targetId, name } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const cleared = await page.evaluate(async (cacheName) => {
+      if (!self.caches) return 0;
+      const cache = await self.caches.open(cacheName);
+      const keys = await cache.keys();
+      await Promise.all(keys.map((r) => cache.delete(r)));
+      return keys.length;
+    }, name);
+    return { ok: true, targetId, name, cleared };
+  }
+
+  async cacheDrop({ targetId, name } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const dropped = await page.evaluate(async (cacheName) => {
+      if (!self.caches) return false;
+      return self.caches.delete(cacheName);
+    }, name);
+    return { ok: true, targetId, name, dropped };
+  }
+
+  async cacheExport({ targetId, name } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const entries = await page.evaluate(async (cacheName) => {
+      if (!self.caches) return [];
+      const cache = await self.caches.open(cacheName);
+      const keys = await cache.keys();
+      const results = [];
+      for (const req of keys) {
+        const res = await cache.match(req);
+        const headers = {};
+        res.headers.forEach((v, k) => { headers[k] = v; });
+        results.push({ url: req.url, status: res.status, headers });
+      }
+      return results;
+    }, name);
+    return { ok: true, targetId, name, entries, count: entries.length };
+  }
+
+  async cacheSummary({ targetId } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const cacheMap = await page.evaluate(async () => {
+      if (!self.caches) return {};
+      const names = await self.caches.keys();
+      const result = {};
+      for (const n of names) {
+        const cache = await self.caches.open(n);
+        const keys = await cache.keys();
+        result[n] = keys.map((r) => r.url);
+      }
+      return result;
+    });
+    return { ok: true, targetId, summary: caSummarize(cacheMap) };
   }
 }
