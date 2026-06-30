@@ -29,6 +29,7 @@ import { PermissionManager } from './PermissionManager.js';
 import { filterByLevel, filterByPattern, filterSince as consoleSince, filterBefore as consoleBefore, summarize as consoleSummarize } from './ConsoleFilter.js';
 import { filterByMethod, filterByUrl, filterByStatus, filterByStatusRange, filterSince as requestSince, filterBefore as requestBefore, summarize as requestSummarize } from './RequestFilter.js';
 import { parseNavigationTiming, parsePaintTiming, mergeMetrics } from './PageMetrics.js';
+import { filterByMessage, filterByStack, filterSince as errorSince, filterBefore as errorBefore, groupByOrigin, deduplicateByMessage, summarize as errorSummarize } from './ErrorFilter.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -1087,6 +1088,29 @@ export class BrowserService {
     const store   = this.logs.get(this.#pageId(page));
     const entries = store?.requests || [];
     return { ok: true, targetId, summary: requestSummarize(entries) };
+  }
+
+  // ── Page Metrics (Phase 32) ───────────────────────────────────────────────────
+
+  // ── Error Filter (Phase 33) ───────────────────────────────────────────────────
+
+  async errorFilter({ targetId, message, stack, since, before, deduplicate } = {}) {
+    const page  = this.#pageFor(targetId);
+    const store = this.logs.get(this.#pageId(page));
+    let entries = [...(store?.errors || [])];
+    if (message     != null) entries = filterByMessage(entries, message);
+    if (stack       != null) entries = filterByStack(entries, stack);
+    if (since       != null) entries = errorSince(entries, since);
+    if (before      != null) entries = errorBefore(entries, before);
+    if (deduplicate)         entries = deduplicateByMessage(entries);
+    return { ok: true, targetId, entries, count: entries.length };
+  }
+
+  async errorSummary({ targetId } = {}) {
+    const page    = this.#pageFor(targetId);
+    const store   = this.logs.get(this.#pageId(page));
+    const entries = store?.errors || [];
+    return { ok: true, targetId, summary: errorSummarize(entries) };
   }
 
   // ── Page Metrics (Phase 32) ───────────────────────────────────────────────────

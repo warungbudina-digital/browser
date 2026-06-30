@@ -52,6 +52,7 @@ export class BrowserManager {
       consoleFilterOps:  ['level', 'pattern', 'since', 'before', 'group', 'summary', 'format'],
       requestFilterOps:  ['method', 'url', 'status', 'statusRange', 'since', 'before', 'group', 'summary', 'format'],
       metricsActions:    ['page-metrics'],
+      errorFilterOps:    ['message', 'stack', 'since', 'before', 'group', 'deduplicate', 'summary', 'format'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -214,6 +215,8 @@ export class BrowserManager {
       case 'request-filter':  return service.requestFilter(payload);
       case 'request-summary': return service.requestSummary(payload);
       case 'page-metrics':    return service.pageMetrics(payload);
+      case 'error-filter':  return service.errorFilter(payload);
+      case 'error-summary': return service.errorSummary(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
