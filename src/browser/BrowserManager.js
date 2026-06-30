@@ -67,6 +67,7 @@ export class BrowserManager {
       ssActions:         ['ss-get-all', 'ss-get', 'ss-set', 'ss-set-many', 'ss-remove', 'ss-clear', 'ss-summary', 'ss-export', 'ss-import'],
       scrollActions:     ['scroll-get', 'scroll-to', 'scroll-by', 'scroll-top', 'scroll-bottom', 'scroll-snapshot', 'scroll-history', 'scroll-clear'],
       cssActions:        ['css-add', 'css-remove', 'css-list', 'css-clear', 'css-inject'],
+      idbActions:        ['idb-databases', 'idb-stores', 'idb-get-all', 'idb-get', 'idb-set', 'idb-delete', 'idb-clear', 'idb-export', 'idb-import', 'idb-summary'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -301,6 +302,16 @@ export class BrowserManager {
       case 'css-list':        return service.cssList(payload);
       case 'css-clear':       return service.cssClear(payload);
       case 'css-inject':      return service.cssInject(payload);
+      case 'idb-databases':   return service.idbDatabases(payload);
+      case 'idb-stores':      return service.idbStores(payload);
+      case 'idb-get-all':     return service.idbGetAll(payload);
+      case 'idb-get':         return service.idbGet(payload);
+      case 'idb-set':         return service.idbSet(payload);
+      case 'idb-delete':      return service.idbDelete(payload);
+      case 'idb-clear':       return service.idbClear(payload);
+      case 'idb-export':      return service.idbExport(payload);
+      case 'idb-import':      return service.idbImport(payload);
+      case 'idb-summary':     return service.idbSummary(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }

@@ -43,6 +43,7 @@ import { filterByKey as lsFilterByKey, filterByValue as lsFilterByValue, search 
 import { filterByKey as ssFilterByKey, filterByValue as ssFilterByValue, search as ssSearch, toObject as ssToObject, fromObject as ssFromObject, summarize as ssSummarize } from './SessionStorageManager.js';
 import { ScrollManager } from './ScrollManager.js';
 import { CSSOverrideManager, styleElementId } from './CSSOverrideManager.js';
+import { filterByKey as idbFilterByKey, filterByStore as idbFilterByStore, summarize as idbSummarize } from './IndexedDBManager.js';
 import { filterByType as wsFilterByType, filterByUrl as wsFilterByUrl, filterByData as wsFilterByData, filterSince as wsSince, filterBefore as wsBefore, groupByUrl as wsGroupByUrl, summarize as wsSummarize, formatText as wsFormatText } from './WebSocketMonitor.js';
 
 const PAGE_ID = Symbol('page-id');
@@ -702,6 +703,26 @@ export class BrowserService {
     if (!page) throw new Error('No browser page is available');
     this.currentTargetId = this.#pageId(page);
     return page;
+  }
+
+  // Sync page lookup — assumes browser is already started.
+  #pageFor(targetId) {
+    const resolvedTargetId = targetId || this.currentTargetId;
+    const page = this.context?.pages().find((p) => this.#pageId(p) === resolvedTargetId)
+               || this.context?.pages()[0];
+    if (!page) throw new Error('No browser page is available');
+    return page;
+  }
+
+  // Async page lookup — starts browser if needed.
+  async #pageForTarget(targetId) {
+    await this.start();
+    return this.#pageFor(targetId);
+  }
+
+  // Public alias for #pageFor used by methods that assume browser already running.
+  _requirePage(targetId) {
+    return this.#pageFor(targetId);
   }
 
   #registerPage(page) {
@@ -1721,5 +1742,220 @@ export class BrowserService {
     const paintMetrics = parsePaintTiming(raw.paint);
     const metrics      = mergeMetrics(navMetrics, paintMetrics);
     return { ok: true, targetId, metrics };
+  }
+
+  // ── IndexedDB Manager (Phase 48) ──────────────────────────────────────────────
+
+  async idbDatabases({ targetId } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const databases = await page.evaluate(() => indexedDB.databases());
+    return { ok: true, targetId, databases, count: databases.length };
+  }
+
+  async idbStores({ targetId, database, store: storePattern } = {}) {
+    if (database == null) throw new Error('database is required');
+    const page = await this.#pageForTarget(targetId);
+    let stores = await page.evaluate((dbName) => {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(dbName);
+        req.onerror = () => reject(new Error(req.error?.message || 'open failed'));
+        req.onsuccess = () => {
+          const db = req.result;
+          const names = [...db.objectStoreNames];
+          db.close();
+          resolve(names);
+        };
+      });
+    }, database);
+    if (storePattern != null) stores = idbFilterByStore(stores, storePattern);
+    return { ok: true, targetId, database, stores, count: stores.length };
+  }
+
+  async idbGetAll({ targetId, database, store, key } = {}) {
+    if (database == null) throw new Error('database is required');
+    if (store == null) throw new Error('store is required');
+    const page = await this.#pageForTarget(targetId);
+    let entries = await page.evaluate(([dbName, storeName]) => {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(dbName);
+        req.onerror = () => reject(new Error(req.error?.message || 'open failed'));
+        req.onsuccess = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(storeName)) { db.close(); return resolve([]); }
+          const tx = db.transaction(storeName, 'readonly');
+          const st = tx.objectStore(storeName);
+          const results = [];
+          const curReq = st.openCursor();
+          curReq.onerror = () => reject(new Error(curReq.error?.message || 'cursor failed'));
+          curReq.onsuccess = (ev) => {
+            const cursor = ev.target.result;
+            if (cursor) { results.push({ key: cursor.key, value: cursor.value }); cursor.continue(); }
+            else { db.close(); resolve(results); }
+          };
+        };
+      });
+    }, [database, store]);
+    if (key != null) entries = idbFilterByKey(entries, key);
+    return { ok: true, targetId, database, store, entries, count: entries.length };
+  }
+
+  async idbGet({ targetId, database, store, key } = {}) {
+    if (database == null) throw new Error('database is required');
+    if (store == null) throw new Error('store is required');
+    if (key == null) throw new Error('key is required');
+    const page = await this.#pageForTarget(targetId);
+    const value = await page.evaluate(([dbName, storeName, entryKey]) => {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(dbName);
+        req.onerror = () => reject(new Error(req.error?.message || 'open failed'));
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction(storeName, 'readonly');
+          const st = tx.objectStore(storeName);
+          const getReq = st.get(entryKey);
+          getReq.onerror = () => reject(new Error(getReq.error?.message || 'get failed'));
+          getReq.onsuccess = () => { db.close(); resolve(getReq.result ?? null); };
+        };
+      });
+    }, [database, store, key]);
+    return { ok: true, targetId, database, store, key, value };
+  }
+
+  async idbSet({ targetId, database, store, key, value } = {}) {
+    if (database == null) throw new Error('database is required');
+    if (store == null) throw new Error('store is required');
+    const page = await this.#pageForTarget(targetId);
+    const resultKey = await page.evaluate(([dbName, storeName, entryKey, entryValue]) => {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(dbName);
+        req.onerror = () => reject(new Error(req.error?.message || 'open failed'));
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction(storeName, 'readwrite');
+          const st = tx.objectStore(storeName);
+          const putReq = st.keyPath == null ? st.put(entryValue, entryKey) : st.put(entryValue);
+          putReq.onerror = () => reject(new Error(putReq.error?.message || 'put failed'));
+          putReq.onsuccess = () => { db.close(); resolve(putReq.result); };
+        };
+      });
+    }, [database, store, key, value]);
+    return { ok: true, targetId, database, store, key: resultKey };
+  }
+
+  async idbDelete({ targetId, database, store, key } = {}) {
+    if (database == null) throw new Error('database is required');
+    if (store == null) throw new Error('store is required');
+    if (key == null) throw new Error('key is required');
+    const page = await this.#pageForTarget(targetId);
+    await page.evaluate(([dbName, storeName, entryKey]) => {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(dbName);
+        req.onerror = () => reject(new Error(req.error?.message || 'open failed'));
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction(storeName, 'readwrite');
+          const st = tx.objectStore(storeName);
+          const delReq = st.delete(entryKey);
+          delReq.onerror = () => reject(new Error(delReq.error?.message || 'delete failed'));
+          delReq.onsuccess = () => { db.close(); resolve(true); };
+        };
+      });
+    }, [database, store, key]);
+    return { ok: true, targetId, database, store, key, deleted: true };
+  }
+
+  async idbClear({ targetId, database, store } = {}) {
+    if (database == null) throw new Error('database is required');
+    if (store == null) throw new Error('store is required');
+    const page = await this.#pageForTarget(targetId);
+    await page.evaluate(([dbName, storeName]) => {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(dbName);
+        req.onerror = () => reject(new Error(req.error?.message || 'open failed'));
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction(storeName, 'readwrite');
+          const st = tx.objectStore(storeName);
+          const clearReq = st.clear();
+          clearReq.onerror = () => reject(new Error(clearReq.error?.message || 'clear failed'));
+          clearReq.onsuccess = () => { db.close(); resolve(true); };
+        };
+      });
+    }, [database, store]);
+    return { ok: true, targetId, database, store, cleared: true };
+  }
+
+  async idbExport({ targetId, database } = {}) {
+    if (database == null) throw new Error('database is required');
+    const page = await this.#pageForTarget(targetId);
+    const data = await page.evaluate((dbName) => {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(dbName);
+        req.onerror = () => reject(new Error(req.error?.message || 'open failed'));
+        req.onsuccess = () => {
+          const db = req.result;
+          const storeNames = [...db.objectStoreNames];
+          if (storeNames.length === 0) { db.close(); return resolve({}); }
+          const result = {};
+          let idx = 0;
+          function nextStore() {
+            if (idx >= storeNames.length) { db.close(); return resolve(result); }
+            const sName = storeNames[idx++];
+            result[sName] = [];
+            const tx = db.transaction(sName, 'readonly');
+            const st = tx.objectStore(sName);
+            const entries = result[sName];
+            const curReq = st.openCursor();
+            curReq.onerror = () => reject(new Error(curReq.error?.message || 'cursor failed'));
+            curReq.onsuccess = (ev) => {
+              const cursor = ev.target.result;
+              if (cursor) { entries.push({ key: cursor.key, value: cursor.value }); cursor.continue(); }
+              else nextStore();
+            };
+          }
+          nextStore();
+        };
+      });
+    }, database);
+    return { ok: true, targetId, database, data };
+  }
+
+  async idbImport({ targetId, database, data } = {}) {
+    if (database == null) throw new Error('database is required');
+    if (data == null || typeof data !== 'object') throw new Error('data must be a non-null object');
+    const page = await this.#pageForTarget(targetId);
+    const imported = await page.evaluate(([dbName, importData]) => {
+      return new Promise((resolve, reject) => {
+        const storeNames = Object.keys(importData);
+        const req = indexedDB.open(dbName);
+        req.onerror = () => reject(new Error(req.error?.message || 'open failed'));
+        req.onsuccess = () => {
+          const db = req.result;
+          if (storeNames.length === 0) { db.close(); return resolve(0); }
+          let totalCount = 0;
+          let idx = 0;
+          function nextStore() {
+            if (idx >= storeNames.length) { db.close(); return resolve(totalCount); }
+            const sName = storeNames[idx++];
+            const entries = importData[sName] || [];
+            const tx = db.transaction(sName, 'readwrite');
+            const st = tx.objectStore(sName);
+            tx.oncomplete = () => { totalCount += entries.length; nextStore(); };
+            tx.onerror = () => reject(new Error(tx.error?.message || 'transaction failed'));
+            for (const { key, value } of entries) {
+              if (st.keyPath == null) st.put(value, key);
+              else st.put(value);
+            }
+          }
+          nextStore();
+        };
+      });
+    }, [database, data]);
+    return { ok: true, targetId, database, imported };
+  }
+
+  async idbSummary({ targetId, database, store } = {}) {
+    const { entries } = await this.idbGetAll({ targetId, database, store });
+    return { ok: true, targetId, database, store, summary: idbSummarize(entries) };
   }
 }
