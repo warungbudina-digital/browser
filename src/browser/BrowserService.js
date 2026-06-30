@@ -46,6 +46,7 @@ import { CSSOverrideManager, styleElementId } from './CSSOverrideManager.js';
 import { filterByKey as idbFilterByKey, filterByStore as idbFilterByStore, summarize as idbSummarize } from './IndexedDBManager.js';
 import { filterByOp as cbFilterByOp, filterByText as cbFilterByText, filterSince as cbFilterSince, summarize as cbSummarize } from './ClipboardManager.js';
 import { filterByType as fmFilterByType, filterByName as fmFilterByName, filterRequired as fmFilterRequired, filterDisabled as fmFilterDisabled, summarize as fmSummarize } from './FormManager.js';
+import { filterByScope as swFilterByScope, filterByState as swFilterByState, findByScope as swFindByScope, summarize as swSummarize } from './ServiceWorkerManager.js';
 import { filterByType as wsFilterByType, filterByUrl as wsFilterByUrl, filterByData as wsFilterByData, filterSince as wsSince, filterBefore as wsBefore, groupByUrl as wsGroupByUrl, summarize as wsSummarize, formatText as wsFormatText } from './WebSocketMonitor.js';
 
 const PAGE_ID = Symbol('page-id');
@@ -2162,5 +2163,66 @@ export class BrowserService {
   async formSummary({ targetId, form: formSel = 0 } = {}) {
     const { form } = await this.formGet({ targetId, form: formSel });
     return { ok: true, targetId, summary: fmSummarize(form.fields) };
+  }
+
+  // ── Service Worker Manager (Phase 51) ─────────────────────────────────────────
+
+  async swList({ targetId, scope, state } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    let registrations = await page.evaluate(async () => {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      return regs.map((r) => ({
+        scope:       r.scope,
+        active:      r.active      ? { scriptURL: r.active.scriptURL,      state: r.active.state }      : null,
+        waiting:     r.waiting     ? { scriptURL: r.waiting.scriptURL,     state: r.waiting.state }     : null,
+        installing:  r.installing  ? { scriptURL: r.installing.scriptURL,  state: r.installing.state }  : null,
+      }));
+    });
+    if (scope != null) registrations = swFilterByScope(registrations, scope);
+    if (state != null) registrations = swFilterByState(registrations, state);
+    return { ok: true, targetId, registrations, count: registrations.length };
+  }
+
+  async swUnregister({ targetId, scope } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const result = await page.evaluate(async (swScope) => {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      const reg  = swScope
+        ? regs.find((r) => r.scope === swScope || r.scope.includes(swScope))
+        : regs[0];
+      if (!reg) return { unregistered: false, scope: null };
+      const ok = await reg.unregister();
+      return { unregistered: ok, scope: reg.scope };
+    }, scope || null);
+    return { ok: true, targetId, ...result };
+  }
+
+  async swUnregisterAll({ targetId } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const count = await page.evaluate(async () => {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+      return regs.length;
+    });
+    return { ok: true, targetId, unregistered: count };
+  }
+
+  async swUpdate({ targetId, scope } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    const result = await page.evaluate(async (swScope) => {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      const reg  = swScope
+        ? regs.find((r) => r.scope === swScope || r.scope.includes(swScope))
+        : regs[0];
+      if (!reg) return { updated: false, scope: null };
+      await reg.update();
+      return { updated: true, scope: reg.scope };
+    }, scope || null);
+    return { ok: true, targetId, ...result };
+  }
+
+  async swSummary({ targetId } = {}) {
+    const { registrations } = await this.swList({ targetId });
+    return { ok: true, targetId, summary: swSummarize(registrations) };
   }
 }

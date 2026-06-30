@@ -70,6 +70,7 @@ export class BrowserManager {
       idbActions:        ['idb-databases', 'idb-stores', 'idb-get-all', 'idb-get', 'idb-set', 'idb-delete', 'idb-clear', 'idb-export', 'idb-import', 'idb-summary'],
       clipboardActions:  ['clipboard-write', 'clipboard-read', 'clipboard-clear', 'clipboard-history', 'clipboard-history-clear', 'clipboard-summary'],
       formActions:       ['form-list', 'form-get', 'form-fill', 'form-values', 'form-submit', 'form-reset', 'form-filter', 'form-summary'],
+      swActions:         ['sw-list', 'sw-unregister', 'sw-unregister-all', 'sw-update', 'sw-summary'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -327,7 +328,12 @@ export class BrowserManager {
       case 'form-submit':  return service.formSubmit(payload);
       case 'form-reset':   return service.formReset(payload);
       case 'form-filter':  return service.formFilter(payload);
-      case 'form-summary': return service.formSummary(payload);
+      case 'form-summary':      return service.formSummary(payload);
+      case 'sw-list':           return service.swList(payload);
+      case 'sw-unregister':     return service.swUnregister(payload);
+      case 'sw-unregister-all': return service.swUnregisterAll(payload);
+      case 'sw-update':         return service.swUpdate(payload);
+      case 'sw-summary':        return service.swSummary(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
