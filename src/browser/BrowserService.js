@@ -41,6 +41,7 @@ import { flattenTree, findByRole as axFindByRole, findByName as axFindByName, fi
 import { filterByUrl as navFilterByUrl, filterByTitle as navFilterByTitle, filterSince as navSince, filterBefore as navBefore, deduplicateConsecutive, groupByUrl as navGroupByUrl, summarize as navSummarize, formatText as navFormatText } from './NavigationTracker.js';
 import { filterByKey as lsFilterByKey, filterByValue as lsFilterByValue, search as lsSearch, toObject as lsToObject, fromObject as lsFromObject, summarize as lsSummarize } from './LocalStorageManager.js';
 import { ScrollManager } from './ScrollManager.js';
+import { CSSOverrideManager, styleElementId } from './CSSOverrideManager.js';
 import { filterByType as wsFilterByType, filterByUrl as wsFilterByUrl, filterByData as wsFilterByData, filterSince as wsSince, filterBefore as wsBefore, groupByUrl as wsGroupByUrl, summarize as wsSummarize, formatText as wsFormatText } from './WebSocketMonitor.js';
 
 const PAGE_ID = Symbol('page-id');
@@ -87,6 +88,7 @@ export class BrowserService {
     this.basicAuthManager = new BasicAuthManager();
     this.initScriptManager = new InitScriptManager();
     this.scrollManager = new ScrollManager();
+    this.cssOverrideManager = new CSSOverrideManager();
   }
 
   async start() {
@@ -1499,6 +1501,71 @@ export class BrowserService {
   async scrollClear({ targetId } = {}) {
     this.scrollManager.clear();
     return { ok: true, targetId, cleared: true };
+  }
+
+  // ── CSS Overrides (Phase 46) ──────────────────────────────────────────────────
+
+  async cssAdd({ targetId, name, css } = {}) {
+    const rule    = this.cssOverrideManager.add({ name, css });
+    const page    = this._requirePage(targetId);
+    const elemId  = styleElementId(rule.id);
+    const ruleCss = css;
+    await page.evaluate(({ elemId, ruleCss }) => {
+      const el = document.createElement('style');
+      el.id = elemId;
+      el.textContent = ruleCss;
+      document.head.appendChild(el);
+    }, { elemId, ruleCss });
+    return { ok: true, targetId, rule };
+  }
+
+  async cssRemove({ targetId, id } = {}) {
+    const removed = this.cssOverrideManager.remove(id);
+    if (removed) {
+      const page   = this._requirePage(targetId);
+      const elemId = styleElementId(id);
+      await page.evaluate((elemId) => {
+        const el = document.getElementById(elemId);
+        if (el) el.remove();
+      }, elemId);
+    }
+    return { ok: true, targetId, id, removed };
+  }
+
+  async cssList({ targetId } = {}) {
+    const rules = this.cssOverrideManager.list();
+    return { ok: true, targetId, rules, count: rules.length };
+  }
+
+  async cssClear({ targetId } = {}) {
+    const rules = this.cssOverrideManager.allRules();
+    const page  = this._requirePage(targetId);
+    const ids   = rules.map((r) => r.id);
+    await page.evaluate((ids) => {
+      for (const id of ids) {
+        const el = document.getElementById(`css-override-${id}`);
+        if (el) el.remove();
+      }
+    }, ids);
+    this.cssOverrideManager.clear();
+    return { ok: true, targetId, cleared: true };
+  }
+
+  async cssInject({ targetId } = {}) {
+    const rules = this.cssOverrideManager.allRules();
+    const page  = this._requirePage(targetId);
+    for (const rule of rules) {
+      const elemId  = styleElementId(rule.id);
+      const ruleCss = rule.css;
+      await page.evaluate(({ elemId, ruleCss }) => {
+        if (document.getElementById(elemId)) return;
+        const el = document.createElement('style');
+        el.id = elemId;
+        el.textContent = ruleCss;
+        document.head.appendChild(el);
+      }, { elemId, ruleCss });
+    }
+    return { ok: true, targetId, injected: rules.length };
   }
 
   // ── Locale Emulation (Phase 34) ──────────────────────────────────────────────

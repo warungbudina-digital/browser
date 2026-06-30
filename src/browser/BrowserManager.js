@@ -65,6 +65,7 @@ export class BrowserManager {
       navActions:        ['nav-history', 'nav-summary', 'nav-clear'],
       lsActions:         ['ls-get-all', 'ls-get', 'ls-set', 'ls-set-many', 'ls-remove', 'ls-clear', 'ls-summary', 'ls-export', 'ls-import'],
       scrollActions:     ['scroll-get', 'scroll-to', 'scroll-by', 'scroll-top', 'scroll-bottom', 'scroll-snapshot', 'scroll-history', 'scroll-clear'],
+      cssActions:        ['css-add', 'css-remove', 'css-list', 'css-clear', 'css-inject'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -285,6 +286,11 @@ export class BrowserManager {
       case 'scroll-snapshot': return service.scrollSnapshot(payload);
       case 'scroll-history':  return service.scrollHistory(payload);
       case 'scroll-clear':    return service.scrollClear(payload);
+      case 'css-add':         return service.cssAdd(payload);
+      case 'css-remove':      return service.cssRemove(payload);
+      case 'css-list':        return service.cssList(payload);
+      case 'css-clear':       return service.cssClear(payload);
+      case 'css-inject':      return service.cssInject(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
