@@ -62,6 +62,7 @@ export class BrowserManager {
       wsActions:         ['ws-filter', 'ws-summary', 'ws-clear'],
       initActions:       ['init-add', 'init-remove', 'init-list', 'init-clear', 'init-run'],
       axActions:         ['ax-snapshot', 'ax-audit'],
+      navActions:        ['nav-history', 'nav-summary', 'nav-clear'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -262,6 +263,9 @@ export class BrowserManager {
       case 'init-run':    return service.initRun(payload);
       case 'ax-snapshot': return service.axSnapshot(payload);
       case 'ax-audit':    return service.axAudit(payload);
+      case 'nav-history': return service.navHistory(payload);
+      case 'nav-summary': return service.navSummary(payload);
+      case 'nav-clear':   return service.navClear(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }

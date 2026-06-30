@@ -38,6 +38,7 @@ import { MediaEmulator, MEDIA_FEATURES, VALID_MEDIA_TYPES } from './MediaEmulato
 import { BasicAuthManager } from './BasicAuthManager.js';
 import { InitScriptManager } from './InitScriptManager.js';
 import { flattenTree, findByRole as axFindByRole, findByName as axFindByName, findMissingNames, findHeadingOrderViolations, findDisabled, summarize as axSummarize } from './AccessibilityAudit.js';
+import { filterByUrl as navFilterByUrl, filterByTitle as navFilterByTitle, filterSince as navSince, filterBefore as navBefore, deduplicateConsecutive, groupByUrl as navGroupByUrl, summarize as navSummarize, formatText as navFormatText } from './NavigationTracker.js';
 import { filterByType as wsFilterByType, filterByUrl as wsFilterByUrl, filterByData as wsFilterByData, filterSince as wsSince, filterBefore as wsBefore, groupByUrl as wsGroupByUrl, summarize as wsSummarize, formatText as wsFormatText } from './WebSocketMonitor.js';
 
 const PAGE_ID = Symbol('page-id');
@@ -700,9 +701,16 @@ export class BrowserService {
   #registerPage(page) {
     const targetId = this.#pageId(page);
     if (this.logs.has(targetId)) return;
-    this.logs.set(targetId, { console: [], errors: [], requests: [], ws: [], dialog: null });
+    this.logs.set(targetId, { console: [], errors: [], requests: [], ws: [], navigation: [], dialog: null });
     page.on('console', (message) => this.logs.get(targetId)?.console.push({ level: message.type(), text: message.text(), at: new Date().toISOString() }));
     page.on('pageerror', (error) => this.logs.get(targetId)?.errors.push({ message: error.message, stack: error.stack, at: new Date().toISOString() }));
+    page.on('framenavigated', async (frame) => {
+      if (frame.parentFrame() !== null) return;
+      const url = frame.url();
+      let title = '';
+      try { title = await page.title(); } catch {}
+      this.logs.get(targetId)?.navigation.push({ url, title, at: new Date().toISOString() });
+    });
     page.on('websocket', (wsConn) => {
       const url = wsConn.url();
       wsConn.on('framesent',     (frame) => this.logs.get(targetId)?.ws.push({ url, type: 'send',    data: String(frame.payload), at: new Date().toISOString() }));
@@ -1338,6 +1346,36 @@ export class BrowserService {
       headingViolations: summary.headingViolations,
       disabled,
     };
+  }
+
+  // ── Navigation Tracker (Phase 43) ─────────────────────────────────────────────
+
+  async navHistory({ targetId, url, title, since, before, format, timestamps, group, deduplicate } = {}) {
+    const page  = this.#pageFor(targetId);
+    const store = this.logs.get(this.#pageId(page));
+    let entries = [...(store?.navigation || [])];
+    if (url         != null) entries = navFilterByUrl(entries, url);
+    if (title       != null) entries = navFilterByTitle(entries, title);
+    if (since       != null) entries = navSince(entries, since);
+    if (before      != null) entries = navBefore(entries, before);
+    if (deduplicate)         entries = deduplicateConsecutive(entries);
+    if (group === 'url')     return { ok: true, targetId, groups: navGroupByUrl(entries) };
+    if (format === 'text')   return { ok: true, targetId, text: navFormatText(entries, { timestamps: timestamps === true }) };
+    return { ok: true, targetId, entries, count: entries.length };
+  }
+
+  async navSummary({ targetId } = {}) {
+    const page    = this.#pageFor(targetId);
+    const store   = this.logs.get(this.#pageId(page));
+    const entries = store?.navigation || [];
+    return { ok: true, targetId, summary: navSummarize(entries) };
+  }
+
+  async navClear({ targetId } = {}) {
+    const page  = this.#pageFor(targetId);
+    const store = this.logs.get(this.#pageId(page));
+    if (store) store.navigation = [];
+    return { ok: true, targetId, cleared: true };
   }
 
   // ── Locale Emulation (Phase 34) ──────────────────────────────────────────────
