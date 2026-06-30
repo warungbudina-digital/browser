@@ -44,6 +44,7 @@ import { filterByKey as ssFilterByKey, filterByValue as ssFilterByValue, search 
 import { ScrollManager } from './ScrollManager.js';
 import { CSSOverrideManager, styleElementId } from './CSSOverrideManager.js';
 import { filterByKey as idbFilterByKey, filterByStore as idbFilterByStore, summarize as idbSummarize } from './IndexedDBManager.js';
+import { filterByOp as cbFilterByOp, filterByText as cbFilterByText, filterSince as cbFilterSince, summarize as cbSummarize } from './ClipboardManager.js';
 import { filterByType as wsFilterByType, filterByUrl as wsFilterByUrl, filterByData as wsFilterByData, filterSince as wsSince, filterBefore as wsBefore, groupByUrl as wsGroupByUrl, summarize as wsSummarize, formatText as wsFormatText } from './WebSocketMonitor.js';
 
 const PAGE_ID = Symbol('page-id');
@@ -91,6 +92,7 @@ export class BrowserService {
     this.initScriptManager = new InitScriptManager();
     this.scrollManager = new ScrollManager();
     this.cssOverrideManager = new CSSOverrideManager();
+    this.clipboardHistory = [];
   }
 
   async start() {
@@ -1957,5 +1959,52 @@ export class BrowserService {
   async idbSummary({ targetId, database, store } = {}) {
     const { entries } = await this.idbGetAll({ targetId, database, store });
     return { ok: true, targetId, database, store, summary: idbSummarize(entries) };
+  }
+
+  // ── Clipboard Manager (Phase 49) ──────────────────────────────────────────────
+
+  async clipboardWrite({ targetId, text } = {}) {
+    if (text == null) throw new Error('text is required');
+    const page = await this.#pageForTarget(targetId);
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.evaluate((t) => navigator.clipboard.writeText(t), String(text));
+    const entry = { op: 'write', text: String(text), at: new Date().toISOString() };
+    this.clipboardHistory.push(entry);
+    return { ok: true, targetId, ...entry };
+  }
+
+  async clipboardRead({ targetId } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    const text = await page.evaluate(() => navigator.clipboard.readText());
+    const entry = { op: 'read', text, at: new Date().toISOString() };
+    this.clipboardHistory.push(entry);
+    return { ok: true, targetId, text };
+  }
+
+  async clipboardClear({ targetId } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.evaluate(() => navigator.clipboard.writeText(''));
+    const entry = { op: 'write', text: '', at: new Date().toISOString() };
+    this.clipboardHistory.push(entry);
+    return { ok: true, targetId, cleared: true };
+  }
+
+  async clipboardGetHistory({ op, text, since } = {}) {
+    let history = [...this.clipboardHistory];
+    if (op    != null) history = cbFilterByOp(history, op);
+    if (text  != null) history = cbFilterByText(history, text);
+    if (since != null) history = cbFilterSince(history, since);
+    return { ok: true, history, count: history.length };
+  }
+
+  async clipboardClearHistory() {
+    this.clipboardHistory = [];
+    return { ok: true, cleared: true };
+  }
+
+  async clipboardSummary() {
+    return { ok: true, summary: cbSummarize(this.clipboardHistory) };
   }
 }

@@ -68,6 +68,7 @@ export class BrowserManager {
       scrollActions:     ['scroll-get', 'scroll-to', 'scroll-by', 'scroll-top', 'scroll-bottom', 'scroll-snapshot', 'scroll-history', 'scroll-clear'],
       cssActions:        ['css-add', 'css-remove', 'css-list', 'css-clear', 'css-inject'],
       idbActions:        ['idb-databases', 'idb-stores', 'idb-get-all', 'idb-get', 'idb-set', 'idb-delete', 'idb-clear', 'idb-export', 'idb-import', 'idb-summary'],
+      clipboardActions:  ['clipboard-write', 'clipboard-read', 'clipboard-clear', 'clipboard-history', 'clipboard-history-clear', 'clipboard-summary'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -311,7 +312,13 @@ export class BrowserManager {
       case 'idb-clear':       return service.idbClear(payload);
       case 'idb-export':      return service.idbExport(payload);
       case 'idb-import':      return service.idbImport(payload);
-      case 'idb-summary':     return service.idbSummary(payload);
+      case 'idb-summary':             return service.idbSummary(payload);
+      case 'clipboard-write':         return service.clipboardWrite(payload);
+      case 'clipboard-read':          return service.clipboardRead(payload);
+      case 'clipboard-clear':         return service.clipboardClear(payload);
+      case 'clipboard-history':       return service.clipboardGetHistory(payload);
+      case 'clipboard-history-clear': return service.clipboardClearHistory();
+      case 'clipboard-summary':       return service.clipboardSummary();
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
