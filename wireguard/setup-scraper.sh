@@ -44,8 +44,21 @@ read -rp "Sudah diisi? (y/N) " confirm
 [[ "$confirm" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 1; }
 
 echo "=== [4/5] Enable & start WireGuard ==="
-systemctl enable wg-quick@wg0
-systemctl start wg-quick@wg0
+if pidof systemd &>/dev/null && systemctl is-system-running &>/dev/null 2>&1; then
+  systemctl enable wg-quick@wg0
+  systemctl start wg-quick@wg0
+else
+  # Systemd tidak aktif (container/k8s) — pakai wg-quick langsung
+  wg-quick up wg0
+  # Tambah ke rc.local agar otomatis naik saat reboot
+  if [[ -f /etc/rc.local ]]; then
+    grep -q "wg-quick up wg0" /etc/rc.local || sed -i 's|^exit 0|wg-quick up wg0\nexit 0|' /etc/rc.local
+  else
+    printf '#!/bin/bash\nwg-quick up wg0\nexit 0\n' > /etc/rc.local
+    chmod +x /etc/rc.local
+  fi
+  echo "[INFO] WireGuard distart via wg-quick (systemd tidak tersedia)"
+fi
 
 echo "=== [5/5] Test koneksi ke VPS CHR ==="
 sleep 2

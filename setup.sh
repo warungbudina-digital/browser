@@ -176,13 +176,23 @@ header "WireGuard Client Setup"
 
 WG_CONF="/etc/wireguard/wg0.conf"
 
-if systemctl is-active --quiet wg-quick@wg0 2>/dev/null; then
+wg_is_active() { wg show wg0 &>/dev/null; }
+
+wg_start() {
+  if pidof systemd &>/dev/null && systemctl is-system-running &>/dev/null 2>&1; then
+    systemctl enable --now wg-quick@wg0
+  else
+    wg-quick up wg0
+  fi
+}
+
+if wg_is_active; then
   ok "WireGuard wg0 sudah berjalan — skip"
   wg show wg0 2>/dev/null | head -4 || true
 else
   if [[ -f "$WG_CONF" ]] && ! grep -q "REPLACE_WITH" "$WG_CONF" 2>/dev/null; then
     info "wg0.conf sudah terkonfigurasi, start service..."
-    systemctl enable --now wg-quick@wg0
+    wg_start
     ok "WireGuard dimulai"
   else
     info "Menjalankan wireguard/setup-scraper.sh..."
