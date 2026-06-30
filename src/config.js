@@ -90,7 +90,14 @@ export function loadConfig(env = process.env) {
         hostnameAllowlist: list(env.BROWSER_SSRF_HOSTNAME_ALLOWLIST)
       }),
       profiles: {
-        openclaw: {
+        // When BROWSER_CDP_URL is set, openclaw delegates to the external browser-runner
+        // service via remote-cdp; otherwise it launches Chromium directly (managed mode).
+        openclaw: env.BROWSER_CDP_URL ? {
+          driver: 'remote-cdp',
+          cdpUrl: env.BROWSER_CDP_URL,
+          color: '#FF4500',
+          stealth: bool(env.BROWSER_STEALTH, true),
+        } : {
           driver: 'managed',
           headless: bool(env.BROWSER_HEADLESS, true),
           executablePath: env.BROWSER_EXECUTABLE_PATH || undefined,

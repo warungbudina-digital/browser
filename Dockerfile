@@ -1,26 +1,19 @@
-# ── Stage 1: install npm deps + download Chromium ─────────────────────────────
-FROM node:22.16-bookworm AS builder
+# ── Stage 1: deps — npm ci + patchright Chromium download ─────────────────────
+FROM node:22.16-bookworm AS deps
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
-RUN npx patchright install --with-deps chromium
+RUN npx patchright install chromium
 
-# ── Stage 2: lean runtime ──────────────────────────────────────────────────────
-FROM node:22.16-bookworm-slim AS runtime
+# ── Stage 2: browser-runner — dedicated Chromium CDP server ───────────────────
+FROM node:22.16-bookworm-slim AS browser-runner
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-ENV BROWSER_PROFILE_DIR=/data/profiles/openclaw
-ENV BROWSER_ARTIFACT_DIR=/data/artifacts
-ENV BROWSER_HEADLESS=true
 
-WORKDIR /app
-
-# Chromium system libs + curl untuk HEALTHCHECK
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
     ca-certificates \
     fonts-liberation \
     libasound2 \
@@ -54,15 +47,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxtst6 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /ms-playwright /ms-playwright
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=deps /ms-playwright /ms-playwright
 
+EXPOSE 9222
+
+# Find and launch patchright Chromium with remote debugging
+CMD ["sh", "-c", "exec $(find /ms-playwright -name chrome -type f | head -1) --no-sandbox --disable-gpu --disable-dev-shm-usage --headless=new --remote-debugging-address=0.0.0.0 --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-data"]
+
+# ── Stage 3: runtime — slim API service (no bundled Chromium) ─────────────────
+FROM node:22.16-bookworm-slim AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
 COPY src ./src
 COPY db ./db
 COPY examples ./examples
 COPY README.md ./README.md
 
-RUN mkdir -p /data/profiles /data/artifacts
+RUN mkdir -p /data/profiles /data/artifacts /data/state
 
 EXPOSE 8080
 
