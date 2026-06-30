@@ -60,6 +60,7 @@ export class BrowserManager {
       mediaActions:      ['media-list', 'media-get', 'media-set', 'media-reset'],
       authActions:       ['auth-add', 'auth-list', 'auth-remove', 'auth-clear'],
       wsActions:         ['ws-filter', 'ws-summary', 'ws-clear'],
+      initActions:       ['init-add', 'init-remove', 'init-list', 'init-clear', 'init-run'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -253,6 +254,11 @@ export class BrowserManager {
       case 'ws-filter':  return service.wsFilter(payload);
       case 'ws-summary': return service.wsSummary(payload);
       case 'ws-clear':   return service.wsClear(payload);
+      case 'init-add':    return service.initAdd(payload);
+      case 'init-remove': return service.initRemove(payload);
+      case 'init-list':   return service.initList();
+      case 'init-clear':  return service.initClear();
+      case 'init-run':    return service.initRun(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }

@@ -36,6 +36,7 @@ import { HeaderRuleManager } from './HeaderRuleManager.js';
 import { ViewportManager } from './ViewportManager.js';
 import { MediaEmulator, MEDIA_FEATURES, VALID_MEDIA_TYPES } from './MediaEmulator.js';
 import { BasicAuthManager } from './BasicAuthManager.js';
+import { InitScriptManager } from './InitScriptManager.js';
 import { filterByType as wsFilterByType, filterByUrl as wsFilterByUrl, filterByData as wsFilterByData, filterSince as wsSince, filterBefore as wsBefore, groupByUrl as wsGroupByUrl, summarize as wsSummarize, formatText as wsFormatText } from './WebSocketMonitor.js';
 
 const PAGE_ID = Symbol('page-id');
@@ -80,6 +81,7 @@ export class BrowserService {
     this.viewportManager = new ViewportManager();
     this.mediaEmulator = new MediaEmulator();
     this.basicAuthManager = new BasicAuthManager();
+    this.initScriptManager = new InitScriptManager();
   }
 
   async start() {
@@ -1275,6 +1277,38 @@ export class BrowserService {
     const store = this.logs.get(this.#pageId(page));
     if (store) store.ws = [];
     return { ok: true, targetId, cleared: true };
+  }
+
+  // ── Init Scripts (Phase 41) ───────────────────────────────────────────────────
+
+  async initAdd({ targetId, name, script } = {}) {
+    const entry = this.initScriptManager.add({ name, script });
+    if (this.context) {
+      const page = await this.#pageForTarget(targetId);
+      await page.addInitScript(script);
+    }
+    return { ok: true, ...entry };
+  }
+
+  async initRemove({ id } = {}) {
+    const removed = this.initScriptManager.remove(id);
+    return { ok: true, id, removed };
+  }
+
+  async initList() {
+    return { ok: true, scripts: this.initScriptManager.list(), count: this.initScriptManager.size };
+  }
+
+  async initClear() {
+    this.initScriptManager.clear();
+    return { ok: true, cleared: true };
+  }
+
+  async initRun({ targetId, script } = {}) {
+    if (typeof script !== 'string' || !script.trim()) throw new Error('script must be a non-empty string');
+    const page = await this.#pageForTarget(targetId);
+    const result = await page.evaluate(script);
+    return { ok: true, result: result ?? null };
   }
 
   // ── Locale Emulation (Phase 34) ──────────────────────────────────────────────
