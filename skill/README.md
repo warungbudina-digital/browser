@@ -53,14 +53,40 @@ skill/
 
 ---
 
+---
+
+## facebook-page (v1.0.16)
+
+**Sumber:** ClawHub / seph1709 · MIT License
+
+**Fungsi:** Manage Facebook Page via Meta Graph API v25.0 — post, schedule, reply, moderation, insights, events.
+
+**Mekanisme:**
+- Pure REST API — `fetch()` / PowerShell `Invoke-RestMethod` ke `graph.facebook.com`
+- Auth: long-lived Page Access Token di `~/.config/fb-page/credentials.json`
+- Tidak butuh browser, tidak ada scraping, resmi dan versioned
+
+**Operasi:** post text/image/video/link, schedule post, delete, get insights, reply/hide/delete comment, create event, get page info.
+
+**Rencana integrasi:**
+- Implementasi native sebagai `FacebookPageClient.js` di Node.js menggunakan `fetch()`
+- Tambah route `POST /facebook/page` dengan action: post, schedule, delete, insights, dll
+- Baca credentials dari `~/.config/fb-page/credentials.json`
+- **Prioritas integrasi tertinggi** — paling reliable karena pakai official API
+
+**File kunci:** `SKILL.md`, `README.md`
+
+---
+
 ## Pipeline potensial
 
 ```
-tiktok-growth-os          → generate hooks + script
+tiktok-growth-os          → generate hooks + script + caption
     ↓
-tiktok-uploader           → upload video
+facebook-page             → post ke Facebook Page via Graph API   ← NEW
+tiktok-uploader           → upload video ke TikTok
     ↓
-full-tool-browser         → scrape metrics dari TikTok web
+full-tool-browser         → scrape metrics dari kedua platform
     ↓
 tiktok-growth-os          → log_performance + analyze_patterns → refine strategy
 ```
