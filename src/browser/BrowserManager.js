@@ -51,6 +51,7 @@ export class BrowserManager {
       permissionActions: ['permission-grant', 'permission-revoke', 'permission-reset', 'permission-list'],
       consoleFilterOps:  ['level', 'pattern', 'since', 'before', 'group', 'summary', 'format'],
       requestFilterOps:  ['method', 'url', 'status', 'statusRange', 'since', 'before', 'group', 'summary', 'format'],
+      metricsActions:    ['page-metrics'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -212,6 +213,7 @@ export class BrowserManager {
       case 'console-summary': return service.consoleSummary(payload);
       case 'request-filter':  return service.requestFilter(payload);
       case 'request-summary': return service.requestSummary(payload);
+      case 'page-metrics':    return service.pageMetrics(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }

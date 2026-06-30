@@ -28,6 +28,7 @@ import { NetworkThrottleManager } from './NetworkThrottleManager.js';
 import { PermissionManager } from './PermissionManager.js';
 import { filterByLevel, filterByPattern, filterSince as consoleSince, filterBefore as consoleBefore, summarize as consoleSummarize } from './ConsoleFilter.js';
 import { filterByMethod, filterByUrl, filterByStatus, filterByStatusRange, filterSince as requestSince, filterBefore as requestBefore, summarize as requestSummarize } from './RequestFilter.js';
+import { parseNavigationTiming, parsePaintTiming, mergeMetrics } from './PageMetrics.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -1086,5 +1087,36 @@ export class BrowserService {
     const store   = this.logs.get(this.#pageId(page));
     const entries = store?.requests || [];
     return { ok: true, targetId, summary: requestSummarize(entries) };
+  }
+
+  // ── Page Metrics (Phase 32) ───────────────────────────────────────────────────
+
+  async pageMetrics({ targetId } = {}) {
+    const page = this.#pageFor(targetId);
+    const raw  = await page.evaluate(() => {
+      const nav   = performance.getEntriesByType('navigation')[0] || {};
+      const paint = performance.getEntriesByType('paint') || [];
+      return {
+        navigation: {
+          fetchStart:               nav.fetchStart               ?? 0,
+          domainLookupStart:        nav.domainLookupStart        ?? 0,
+          domainLookupEnd:          nav.domainLookupEnd          ?? 0,
+          connectStart:             nav.connectStart             ?? 0,
+          connectEnd:               nav.connectEnd               ?? 0,
+          requestStart:             nav.requestStart             ?? 0,
+          responseStart:            nav.responseStart            ?? 0,
+          responseEnd:              nav.responseEnd              ?? 0,
+          domContentLoadedEventEnd: nav.domContentLoadedEventEnd ?? 0,
+          loadEventEnd:             nav.loadEventEnd             ?? 0,
+          redirectCount:            nav.redirectCount            ?? 0,
+          type:                     nav.type                     ?? 'navigate',
+        },
+        paint: paint.map((e) => ({ name: e.name, startTime: e.startTime })),
+      };
+    });
+    const navMetrics   = parseNavigationTiming(raw.navigation);
+    const paintMetrics = parsePaintTiming(raw.paint);
+    const metrics      = mergeMetrics(navMetrics, paintMetrics);
+    return { ok: true, targetId, metrics };
   }
 }
