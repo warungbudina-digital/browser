@@ -64,6 +64,7 @@ export class BrowserManager {
       axActions:         ['ax-snapshot', 'ax-audit'],
       navActions:        ['nav-history', 'nav-summary', 'nav-clear'],
       lsActions:         ['ls-get-all', 'ls-get', 'ls-set', 'ls-set-many', 'ls-remove', 'ls-clear', 'ls-summary', 'ls-export', 'ls-import'],
+      ssActions:         ['ss-get-all', 'ss-get', 'ss-set', 'ss-set-many', 'ss-remove', 'ss-clear', 'ss-summary', 'ss-export', 'ss-import'],
       scrollActions:     ['scroll-get', 'scroll-to', 'scroll-by', 'scroll-top', 'scroll-bottom', 'scroll-snapshot', 'scroll-history', 'scroll-clear'],
       cssActions:        ['css-add', 'css-remove', 'css-list', 'css-clear', 'css-inject'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
@@ -278,6 +279,15 @@ export class BrowserManager {
       case 'ls-summary':  return service.lsSummary(payload);
       case 'ls-export':   return service.lsExport(payload);
       case 'ls-import':   return service.lsImport(payload);
+      case 'ss-get-all':  return service.ssGetAll(payload);
+      case 'ss-get':      return service.ssGet(payload);
+      case 'ss-set':      return service.ssSet(payload);
+      case 'ss-set-many': return service.ssSetMany(payload);
+      case 'ss-remove':   return service.ssRemove(payload);
+      case 'ss-clear':    return service.ssClear(payload);
+      case 'ss-summary':  return service.ssSummary(payload);
+      case 'ss-export':   return service.ssExport(payload);
+      case 'ss-import':   return service.ssImport(payload);
       case 'scroll-get':      return service.scrollGet(payload);
       case 'scroll-to':       return service.scrollTo(payload);
       case 'scroll-by':       return service.scrollBy(payload);

@@ -40,6 +40,7 @@ import { InitScriptManager } from './InitScriptManager.js';
 import { flattenTree, findByRole as axFindByRole, findByName as axFindByName, findMissingNames, findHeadingOrderViolations, findDisabled, summarize as axSummarize } from './AccessibilityAudit.js';
 import { filterByUrl as navFilterByUrl, filterByTitle as navFilterByTitle, filterSince as navSince, filterBefore as navBefore, deduplicateConsecutive, groupByUrl as navGroupByUrl, summarize as navSummarize, formatText as navFormatText } from './NavigationTracker.js';
 import { filterByKey as lsFilterByKey, filterByValue as lsFilterByValue, search as lsSearch, toObject as lsToObject, fromObject as lsFromObject, summarize as lsSummarize } from './LocalStorageManager.js';
+import { filterByKey as ssFilterByKey, filterByValue as ssFilterByValue, search as ssSearch, toObject as ssToObject, fromObject as ssFromObject, summarize as ssSummarize } from './SessionStorageManager.js';
 import { ScrollManager } from './ScrollManager.js';
 import { CSSOverrideManager, styleElementId } from './CSSOverrideManager.js';
 import { filterByType as wsFilterByType, filterByUrl as wsFilterByUrl, filterByData as wsFilterByData, filterSince as wsSince, filterBefore as wsBefore, groupByUrl as wsGroupByUrl, summarize as wsSummarize, formatText as wsFormatText } from './WebSocketMonitor.js';
@@ -1446,6 +1447,72 @@ export class BrowserService {
     const entries = lsFromObject(data);
     const page    = await this.#pageForTarget(targetId);
     await page.evaluate((items) => { for (const { key, value } of items) localStorage.setItem(key, value); }, entries);
+    return { ok: true, targetId, count: entries.length };
+  }
+
+  // ── Session Storage (Phase 47) ────────────────────────────────────────────────
+
+  async ssGetAll({ targetId, key, value: valuePattern, text } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    let entries = await page.evaluate(() => Object.entries(sessionStorage).map(([k, v]) => ({ key: k, value: v })));
+    if (key          != null) entries = ssFilterByKey(entries, key);
+    if (valuePattern != null) entries = ssFilterByValue(entries, valuePattern);
+    if (text         != null) entries = ssSearch(entries, text);
+    return { ok: true, targetId, entries, count: entries.length };
+  }
+
+  async ssGet({ targetId, key } = {}) {
+    if (key == null) throw new Error('key is required');
+    const page  = await this.#pageForTarget(targetId);
+    const value = await page.evaluate((k) => sessionStorage.getItem(k), key);
+    return { ok: true, targetId, key, value };
+  }
+
+  async ssSet({ targetId, key, value } = {}) {
+    if (key == null) throw new Error('key is required');
+    if (value == null) throw new Error('value is required');
+    const page = await this.#pageForTarget(targetId);
+    await page.evaluate(([k, v]) => sessionStorage.setItem(k, String(v)), [key, value]);
+    return { ok: true, targetId, key, value: String(value) };
+  }
+
+  async ssSetMany({ targetId, entries } = {}) {
+    if (!Array.isArray(entries)) throw new Error('entries must be an array');
+    const page = await this.#pageForTarget(targetId);
+    await page.evaluate((items) => { for (const { key, value } of items) sessionStorage.setItem(key, value); }, entries);
+    return { ok: true, targetId, count: entries.length };
+  }
+
+  async ssRemove({ targetId, key } = {}) {
+    if (key == null) throw new Error('key is required');
+    const page = await this.#pageForTarget(targetId);
+    await page.evaluate((k) => sessionStorage.removeItem(k), key);
+    return { ok: true, targetId, key, removed: true };
+  }
+
+  async ssClear({ targetId } = {}) {
+    const page = await this.#pageForTarget(targetId);
+    await page.evaluate(() => sessionStorage.clear());
+    return { ok: true, targetId, cleared: true };
+  }
+
+  async ssSummary({ targetId } = {}) {
+    const page    = await this.#pageForTarget(targetId);
+    const entries = await page.evaluate(() => Object.entries(sessionStorage).map(([k, v]) => ({ key: k, value: v })));
+    return { ok: true, targetId, summary: ssSummarize(entries) };
+  }
+
+  async ssExport({ targetId } = {}) {
+    const page    = await this.#pageForTarget(targetId);
+    const entries = await page.evaluate(() => Object.entries(sessionStorage).map(([k, v]) => ({ key: k, value: v })));
+    return { ok: true, targetId, data: ssToObject(entries) };
+  }
+
+  async ssImport({ targetId, data } = {}) {
+    if (data == null) throw new Error('data is required');
+    const entries = ssFromObject(data);
+    const page    = await this.#pageForTarget(targetId);
+    await page.evaluate((items) => { for (const { key, value } of items) sessionStorage.setItem(key, value); }, entries);
     return { ok: true, targetId, count: entries.length };
   }
 
