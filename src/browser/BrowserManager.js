@@ -53,6 +53,7 @@ export class BrowserManager {
       requestFilterOps:  ['method', 'url', 'status', 'statusRange', 'since', 'before', 'group', 'summary', 'format'],
       metricsActions:    ['page-metrics'],
       errorFilterOps:    ['message', 'stack', 'since', 'before', 'group', 'deduplicate', 'summary', 'format'],
+      localeActions:     ['locale-list', 'locale-add', 'locale-remove', 'locale-emulate', 'locale-reset'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -217,6 +218,11 @@ export class BrowserManager {
       case 'page-metrics':    return service.pageMetrics(payload);
       case 'error-filter':  return service.errorFilter(payload);
       case 'error-summary': return service.errorSummary(payload);
+      case 'locale-list':    return service.localeList();
+      case 'locale-add':     return service.localeAdd(payload);
+      case 'locale-remove':  return service.localeRemove(payload);
+      case 'locale-emulate': return service.localeEmulate(payload);
+      case 'locale-reset':   return service.localeReset(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }

@@ -30,6 +30,7 @@ import { filterByLevel, filterByPattern, filterSince as consoleSince, filterBefo
 import { filterByMethod, filterByUrl, filterByStatus, filterByStatusRange, filterSince as requestSince, filterBefore as requestBefore, summarize as requestSummarize } from './RequestFilter.js';
 import { parseNavigationTiming, parsePaintTiming, mergeMetrics } from './PageMetrics.js';
 import { filterByMessage, filterByStack, filterSince as errorSince, filterBefore as errorBefore, groupByOrigin, deduplicateByMessage, summarize as errorSummarize } from './ErrorFilter.js';
+import { LocaleEmulator } from './LocaleEmulator.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -67,6 +68,7 @@ export class BrowserService {
     this.geoEmulator = new GeolocationEmulator();
     this.networkThrottle = new NetworkThrottleManager();
     this.permissionManager = new PermissionManager();
+    this.localeEmulator = new LocaleEmulator();
   }
 
   async start() {
@@ -1091,6 +1093,42 @@ export class BrowserService {
   }
 
   // ── Page Metrics (Phase 32) ───────────────────────────────────────────────────
+
+  // ── Locale Emulation (Phase 34) ──────────────────────────────────────────────
+
+  async localeList() {
+    const locales = [...this.localeEmulator.list().entries()].map(([name, spec]) => ({ name, ...spec }));
+    return { ok: true, presets: this.localeEmulator.presets(), locales, count: locales.length };
+  }
+
+  async localeAdd({ name, locale, timezone, currency, direction } = {}) {
+    const spec = this.localeEmulator.add(name, { locale, timezone, currency, direction });
+    return { ok: true, name: String(name).trim(), spec };
+  }
+
+  async localeRemove({ name } = {}) {
+    const removed = this.localeEmulator.remove(name);
+    return { ok: true, name, removed };
+  }
+
+  async localeEmulate({ targetId, name, locale, timezone, currency, direction } = {}) {
+    const page = this.#pageFor(targetId);
+    const spec  = name != null
+      ? this.localeEmulator.resolve(name)
+      : this.localeEmulator.validateSpec({ locale, timezone, currency, direction });
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setLocaleOverride',   { locale:     spec.locale   });
+    await cdp.send('Emulation.setTimezoneOverride', { timezoneId: spec.timezone });
+    return { ok: true, targetId, locale: spec };
+  }
+
+  async localeReset({ targetId } = {}) {
+    const page = this.#pageFor(targetId);
+    const cdp  = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setLocaleOverride',   { locale:     '' });
+    await cdp.send('Emulation.setTimezoneOverride', { timezoneId: '' });
+    return { ok: true, targetId, reset: true };
+  }
 
   // ── Error Filter (Phase 33) ───────────────────────────────────────────────────
 
