@@ -115,8 +115,8 @@ services:
       # ── Browser Pool ──────────────────────────
       BROWSER_POOL_SIZE:   "3"
       BROWSER_POOL_PREFIX: pool
-      # ── MQTT (publish hasil ke CHR broker) ───
-      MQTT_ENABLED:      ${MQTT_ENABLED:-false}
+      # ── MQTT (publish hasil ke CHR broker via WireGuard) ────────────────
+      MQTT_ENABLED:      ${MQTT_ENABLED:-true}
       MQTT_BROKER_URL:   ${MQTT_BROKER_URL:-mqtt://10.10.0.1:1883}
       MQTT_USERNAME:     ${MQTT_USERNAME:-}
       MQTT_PASSWORD:     ${MQTT_PASSWORD:-}
@@ -126,7 +126,7 @@ services:
       # ── Browser CDP (connect ke browser-runner service) ───
       BROWSER_CDP_URL:   "http://browser:9222"
       BROWSER_SSRF_DANGEROUSLY_ALLOW_PRIVATE_NETWORK: "true"
-      BROWSER_SSRF_HOSTNAME_ALLOWLIST: "itemku.com,www.itemku.com"
+      BROWSER_SSRF_HOSTNAME_ALLOWLIST: "itemku.com,www.itemku.com,shopee.co.id,www.shopee.co.id,tokopedia.com,www.tokopedia.com,bukalapak.com,www.bukalapak.com,lazada.co.id,www.lazada.co.id"
       # BROWSER_PROXY_SERVER: "http://host:port"
       # BROWSER_PROXY_USERNAME: ""
       # BROWSER_PROXY_PASSWORD: ""
