@@ -26,6 +26,7 @@ import { filterByDomain, filterByName, filterByPath, filterExpired, groupByDomai
 import { GeolocationEmulator } from './GeolocationEmulator.js';
 import { NetworkThrottleManager } from './NetworkThrottleManager.js';
 import { PermissionManager } from './PermissionManager.js';
+import { filterByLevel, filterByPattern, filterSince, filterBefore, summarize } from './ConsoleFilter.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -1042,5 +1043,25 @@ export class BrowserService {
       return { ok: true, targetId, permissions: this.permissionManager.list(targetId) };
     }
     return { ok: true, all: this.permissionManager.listAll() };
+  }
+
+  // ── Console Filter (Phase 30) ─────────────────────────────────────────────────
+
+  async consoleFilter({ targetId, level, pattern, since, before } = {}) {
+    const page  = this.#pageFor(targetId);
+    const store = this.logs.get(this.#pageId(page));
+    let entries = [...(store?.console || [])];
+    if (level   != null) entries = filterByLevel(entries, level);
+    if (pattern != null) entries = filterByPattern(entries, pattern);
+    if (since   != null) entries = filterSince(entries, since);
+    if (before  != null) entries = filterBefore(entries, before);
+    return { ok: true, targetId, entries, count: entries.length };
+  }
+
+  async consoleSummary({ targetId } = {}) {
+    const page    = this.#pageFor(targetId);
+    const store   = this.logs.get(this.#pageId(page));
+    const entries = store?.console || [];
+    return { ok: true, targetId, summary: summarize(entries) };
   }
 }
