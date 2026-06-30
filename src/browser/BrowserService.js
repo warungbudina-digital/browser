@@ -26,7 +26,8 @@ import { filterByDomain, filterByName, filterByPath, filterExpired, groupByDomai
 import { GeolocationEmulator } from './GeolocationEmulator.js';
 import { NetworkThrottleManager } from './NetworkThrottleManager.js';
 import { PermissionManager } from './PermissionManager.js';
-import { filterByLevel, filterByPattern, filterSince, filterBefore, summarize } from './ConsoleFilter.js';
+import { filterByLevel, filterByPattern, filterSince as consoleSince, filterBefore as consoleBefore, summarize as consoleSummarize } from './ConsoleFilter.js';
+import { filterByMethod, filterByUrl, filterByStatus, filterByStatusRange, filterSince as requestSince, filterBefore as requestBefore, summarize as requestSummarize } from './RequestFilter.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -1053,8 +1054,8 @@ export class BrowserService {
     let entries = [...(store?.console || [])];
     if (level   != null) entries = filterByLevel(entries, level);
     if (pattern != null) entries = filterByPattern(entries, pattern);
-    if (since   != null) entries = filterSince(entries, since);
-    if (before  != null) entries = filterBefore(entries, before);
+    if (since   != null) entries = consoleSince(entries, since);
+    if (before  != null) entries = consoleBefore(entries, before);
     return { ok: true, targetId, entries, count: entries.length };
   }
 
@@ -1062,6 +1063,28 @@ export class BrowserService {
     const page    = this.#pageFor(targetId);
     const store   = this.logs.get(this.#pageId(page));
     const entries = store?.console || [];
-    return { ok: true, targetId, summary: summarize(entries) };
+    return { ok: true, targetId, summary: consoleSummarize(entries) };
+  }
+
+  // ── Request Filter (Phase 31) ─────────────────────────────────────────────────
+
+  async requestFilter({ targetId, method, url, status, statusRange, since, before } = {}) {
+    const page  = this.#pageFor(targetId);
+    const store = this.logs.get(this.#pageId(page));
+    let entries = [...(store?.requests || [])];
+    if (method      != null) entries = filterByMethod(entries, method);
+    if (url         != null) entries = filterByUrl(entries, url);
+    if (status      != null) entries = filterByStatus(entries, status);
+    if (statusRange != null) entries = filterByStatusRange(entries, statusRange[0], statusRange[1]);
+    if (since       != null) entries = requestSince(entries, since);
+    if (before      != null) entries = requestBefore(entries, before);
+    return { ok: true, targetId, entries, count: entries.length };
+  }
+
+  async requestSummary({ targetId } = {}) {
+    const page    = this.#pageFor(targetId);
+    const store   = this.logs.get(this.#pageId(page));
+    const entries = store?.requests || [];
+    return { ok: true, targetId, summary: requestSummarize(entries) };
   }
 }

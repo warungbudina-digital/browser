@@ -50,6 +50,7 @@ export class BrowserManager {
       throttleActions:  ['throttle-list', 'throttle-add', 'throttle-remove', 'throttle-set', 'throttle-reset'],
       permissionActions: ['permission-grant', 'permission-revoke', 'permission-reset', 'permission-list'],
       consoleFilterOps:  ['level', 'pattern', 'since', 'before', 'group', 'summary', 'format'],
+      requestFilterOps:  ['method', 'url', 'status', 'statusRange', 'since', 'before', 'group', 'summary', 'format'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -209,6 +210,8 @@ export class BrowserManager {
       case 'permission-list':   return service.permissionList(payload);
       case 'console-filter':  return service.consoleFilter(payload);
       case 'console-summary': return service.consoleSummary(payload);
+      case 'request-filter':  return service.requestFilter(payload);
+      case 'request-summary': return service.requestSummary(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
