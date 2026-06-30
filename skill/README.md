@@ -9,7 +9,8 @@ skill/
 ├── tiktok-uploader/           # v0.1.0 — upload video ke TikTok via browser automation
 ├── tiktok-growth-os/          # v3.0.0 — content strategy, hooks, scripts, analytics
 ├── facebook-page/             # v1.0.16 — Meta Graph API v25.0 page manager
-└── social-media-scheduler/    # v1.0.0 — AI content calendar & platform-optimized drafting
+├── social-media-scheduler/    # v1.0.0 — AI content calendar & platform-optimized drafting
+└── ipstory/                   # v1.0.0 — AI personal brand story generator (5-step framework)
 ```
 
 ---
@@ -105,10 +106,36 @@ skill/
 
 ---
 
+---
+
+## ipstory (v1.0.0)
+
+**Sumber:** ClawHub / fengbabao0929 · "IP" = 個人IP (personal brand, istilah creator China)
+
+**Fungsi:** Pure AI prompt skill — generate personal brand story menggunakan 5-step framework: Pain Resonance → Turning Point → Conflict → Philosophy → Results.
+
+**Mekanisme:**
+- Tidak ada kode — hanya `SKILL.md` sebagai system prompt + referensi + templates
+- Output: Markdown narrative, outline, story draft siap edit
+- 3 story patterns: Corporate Escape, Expert to Authority, Phoenix Rising
+- Referensi kisah nyata: Wanying (2.400/bln → 6 juta/bln via WeChat business)
+- Template per industri di `references/templates.md`
+
+**Rencana integrasi:**
+- Inject `SKILL.md` sebagai system prompt untuk session personal branding
+- **Foundation layer** sebelum `social-media-scheduler`: ipstory generate brand story → scheduler pecah jadi konten harian per platform
+- Bisa jadi route `POST /content/brand-story` ke Claude API
+
+**File kunci:** `SKILL.md`, `references/templates.md`, `references/reference.md`
+
+---
+
 ## Pipeline potensial
 
 ```
-social-media-scheduler    → AI generate: calendar, caption, hashtag, CTA   ← NEW
+ipstory                   → AI generate: brand story, bio, origin narrative   ← NEW
+    ↓
+social-media-scheduler    → AI generate: calendar, caption, hashtag, CTA
     ↓
 tiktok-growth-os          → generate hooks + script tambahan
     ↓
