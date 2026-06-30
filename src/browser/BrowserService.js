@@ -36,6 +36,7 @@ import { HeaderRuleManager } from './HeaderRuleManager.js';
 import { ViewportManager } from './ViewportManager.js';
 import { MediaEmulator, MEDIA_FEATURES, VALID_MEDIA_TYPES } from './MediaEmulator.js';
 import { BasicAuthManager } from './BasicAuthManager.js';
+import { filterByType as wsFilterByType, filterByUrl as wsFilterByUrl, filterByData as wsFilterByData, filterSince as wsSince, filterBefore as wsBefore, groupByUrl as wsGroupByUrl, summarize as wsSummarize, formatText as wsFormatText } from './WebSocketMonitor.js';
 
 const PAGE_ID = Symbol('page-id');
 
@@ -696,9 +697,14 @@ export class BrowserService {
   #registerPage(page) {
     const targetId = this.#pageId(page);
     if (this.logs.has(targetId)) return;
-    this.logs.set(targetId, { console: [], errors: [], requests: [], dialog: null });
+    this.logs.set(targetId, { console: [], errors: [], requests: [], ws: [], dialog: null });
     page.on('console', (message) => this.logs.get(targetId)?.console.push({ level: message.type(), text: message.text(), at: new Date().toISOString() }));
     page.on('pageerror', (error) => this.logs.get(targetId)?.errors.push({ message: error.message, stack: error.stack, at: new Date().toISOString() }));
+    page.on('websocket', (wsConn) => {
+      const url = wsConn.url();
+      wsConn.on('framesent',     (frame) => this.logs.get(targetId)?.ws.push({ url, type: 'send',    data: String(frame.payload), at: new Date().toISOString() }));
+      wsConn.on('framereceived', (frame) => this.logs.get(targetId)?.ws.push({ url, type: 'receive', data: String(frame.payload), at: new Date().toISOString() }));
+    });
     page.on('requestfinished', async (request) => {
       try {
         const response = await request.response();
@@ -1239,6 +1245,36 @@ export class BrowserService {
   async authClear() {
     this.basicAuthManager.clear();
     return { ok: true, cleared: true };
+  }
+
+  // ── WebSocket Monitor (Phase 40) ──────────────────────────────────────────────
+
+  async wsFilter({ targetId, type, url, data, since, before, format, timestamps, group } = {}) {
+    const page  = this.#pageFor(targetId);
+    const store = this.logs.get(this.#pageId(page));
+    let entries = [...(store?.ws || [])];
+    if (type   != null) entries = wsFilterByType(entries, type);
+    if (url    != null) entries = wsFilterByUrl(entries, url);
+    if (data   != null) entries = wsFilterByData(entries, data);
+    if (since  != null) entries = wsSince(entries, since);
+    if (before != null) entries = wsBefore(entries, before);
+    if (group === 'url') return { ok: true, targetId, groups: wsGroupByUrl(entries) };
+    if (format === 'text') return { ok: true, targetId, text: wsFormatText(entries, { timestamps: timestamps === true }) };
+    return { ok: true, targetId, entries, count: entries.length };
+  }
+
+  async wsSummary({ targetId } = {}) {
+    const page    = this.#pageFor(targetId);
+    const store   = this.logs.get(this.#pageId(page));
+    const entries = store?.ws || [];
+    return { ok: true, targetId, summary: wsSummarize(entries) };
+  }
+
+  async wsClear({ targetId } = {}) {
+    const page  = this.#pageFor(targetId);
+    const store = this.logs.get(this.#pageId(page));
+    if (store) store.ws = [];
+    return { ok: true, targetId, cleared: true };
   }
 
   // ── Locale Emulation (Phase 34) ──────────────────────────────────────────────

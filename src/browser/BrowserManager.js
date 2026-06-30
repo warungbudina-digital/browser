@@ -59,6 +59,7 @@ export class BrowserManager {
       viewportActions:   ['viewport-list', 'viewport-add', 'viewport-remove', 'viewport-set', 'viewport-reset'],
       mediaActions:      ['media-list', 'media-get', 'media-set', 'media-reset'],
       authActions:       ['auth-add', 'auth-list', 'auth-remove', 'auth-clear'],
+      wsActions:         ['ws-filter', 'ws-summary', 'ws-clear'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -249,6 +250,9 @@ export class BrowserManager {
       case 'auth-list':   return service.authList();
       case 'auth-remove': return service.authRemove(payload);
       case 'auth-clear':  return service.authClear();
+      case 'ws-filter':  return service.wsFilter(payload);
+      case 'ws-summary': return service.wsSummary(payload);
+      case 'ws-clear':   return service.wsClear(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
