@@ -97,6 +97,7 @@ services:
       # ── API Security ──────────────────────────
       API_KEY:           ${API_KEY:-}
       # ── Proxy (opsional) ──────────────────────
+      BROWSER_SSRF_HOSTNAME_ALLOWLIST: "itemku.com,www.itemku.com"
       # BROWSER_PROXY_SERVER: "http://host:port"
       # BROWSER_PROXY_USERNAME: ""
       # BROWSER_PROXY_PASSWORD: ""

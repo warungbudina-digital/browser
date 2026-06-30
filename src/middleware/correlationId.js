@@ -16,7 +16,7 @@ export function generateRequestId() {
  *     the `x-request-id` response header.
  */
 export function createCorrelationIdHook() {
-  return function correlationIdOnRequest(request, reply) {
+  return async function correlationIdOnRequest(request, reply) {
     const id = request.headers['x-request-id'] || generateRequestId();
     request.requestId = id;
     reply.header('x-request-id', id);
