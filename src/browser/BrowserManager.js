@@ -63,6 +63,7 @@ export class BrowserManager {
       initActions:       ['init-add', 'init-remove', 'init-list', 'init-clear', 'init-run'],
       axActions:         ['ax-snapshot', 'ax-audit'],
       navActions:        ['nav-history', 'nav-summary', 'nav-clear'],
+      lsActions:         ['ls-get-all', 'ls-get', 'ls-set', 'ls-set-many', 'ls-remove', 'ls-clear', 'ls-summary', 'ls-export', 'ls-import'],
       actKinds: ['click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate', 'close', 'batch'],
       profileActions: ['list', 'get', 'create', 'update', 'remove', 'select'],
       snapshotRefModes: ['numeric', 'interactive'],
@@ -266,6 +267,15 @@ export class BrowserManager {
       case 'nav-history': return service.navHistory(payload);
       case 'nav-summary': return service.navSummary(payload);
       case 'nav-clear':   return service.navClear(payload);
+      case 'ls-get-all':  return service.lsGetAll(payload);
+      case 'ls-get':      return service.lsGet(payload);
+      case 'ls-set':      return service.lsSet(payload);
+      case 'ls-set-many': return service.lsSetMany(payload);
+      case 'ls-remove':   return service.lsRemove(payload);
+      case 'ls-clear':    return service.lsClear(payload);
+      case 'ls-summary':  return service.lsSummary(payload);
+      case 'ls-export':   return service.lsExport(payload);
+      case 'ls-import':   return service.lsImport(payload);
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
