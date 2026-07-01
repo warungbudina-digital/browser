@@ -37,6 +37,8 @@ export class SseManager {
         clearInterval(timer);
       }
     }, KEEPALIVE_MS);
+    // Heartbeat tidak boleh menahan process tetap hidup (mis. saat test/shutdown)
+    timer.unref?.();
 
     const conn = { reply, unsub, timer };
     this.#connections.add(conn);

@@ -51,3 +51,10 @@ node --test test/phase51.test.js
 node --test test/phase52.test.js
 node --test test/phase53.test.js
 ```
+
+## Update (2026-07-01) — RESOLVED
+
+`package.json` `test` script kini memakai glob `node --test test/*.test.js`
+(shell expand → path eksplisit, bukan auto-discovery). phase48–53 otomatis
+tercakup; diverifikasi standalone satu per satu lalu full run: 1333 pass / 0 fail.
+File test baru di `test/*.test.js` otomatis ikut ke depannya.

@@ -33,3 +33,9 @@ timeout 20 node --test test/phase10.test.js; echo "exit: $?"   # 124 = timed out
 FILES=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json')).scripts.test.replace('node --test ','').split(' ').filter(f=>f!=='test/phase10.test.js').join(' '))")
 node --test $FILES
 ```
+
+## Update (2026-07-01) — RESOLVED
+
+Heartbeat `setInterval` di `SseManager.add()` kini di-`.unref()` sehingga tidak
+menahan process test tetap hidup. `npm test` (glob semua file, termasuk
+phase10) selesai bersih dalam ~38 detik, exit 0.
