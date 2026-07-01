@@ -26,9 +26,19 @@ skill/
 - Auth via cookies.txt, sessionid, atau cookie list
 - `TikTokManager` wrapper class untuk single upload, batch, schedule, dan scan direktori
 
-**Rencana integrasi:**
-- Tambah route `POST /tiktok/upload` di server yang invoke `scripts/tiktok_manager.py` via subprocess
-- ATAU reimplementasi native Node.js menggunakan Playwright yang sudah ada (BrowserService + formFill + upload action)
+**Status integrasi:**
+- **Implemented (auth saja)** — `POST /sessions/:profile/import` sekarang bisa
+  menerima `cookiesTxt` (format Netscape, hasil export ekstensi "Get cookies.txt
+  LOCALLY" di browser pribadi user) atau `cookies` (array langsung), lalu
+  simpan ke `SessionStore` supaya job scraping berikutnya untuk profile+platform
+  itu auto-restore session yang sudah login. Lihat
+  `src/scraper/CookiesTxtParser.js`, `examples/import-session.sh`.
+- Belum: upload/posting video itu sendiri — `BrowserService.upload()` (action
+  `upload`, `setInputFiles` ke `<input type=file>`) sudah ada sebagai primitive,
+  tapi flow lengkap (navigate ke halaman upload TikTok, isi caption, publish)
+  belum diimplementasi. Rencana: reimplementasi native Node.js pakai primitive
+  yang sudah ada, bukan subprocess ke `tiktok_manager.py`, supaya bisa reuse
+  session yang di-import lewat endpoint di atas.
 - Cocok digabung dengan `tiktok-growth-os` sebagai execution layer
 
 **File kunci:** `scripts/tiktok_manager.py`, `SKILL.md`
