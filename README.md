@@ -329,6 +329,20 @@ Persist data:
 - `./data/artifacts`
 - `./data/state`
 
+## Deploy ke VPS Scraper (WireGuard + project, satu perintah)
+
+```bash
+sudo bash setup.sh
+```
+
+Installer ini menjalankan semuanya berurutan: cek Docker/Compose, install
+dependency host, buat `.env` interaktif (password DB, API key, dll.),
+setup WireGuard client ke VPS CHR (`wireguard/setup.sh` — lihat
+`wireguard/README.md`), lalu `docker compose build && up`. Aman dijalankan
+ulang — tiap langkah skip sendiri kalau sudah dikonfigurasi/jalan
+sebelumnya (termasuk WireGuard: tidak akan tanya ulang kalau `wg0` sudah
+aktif).
+
 ---
 
 ## CLI

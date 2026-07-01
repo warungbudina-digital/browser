@@ -13,6 +13,15 @@ WG_CONF="/etc/wireguard/wg0.conf"
 KEY_DIR="/etc/wireguard"
 PERSIST_DIR="$HOME/.wireguard-scraper"
 
+# Idempotent: kalau wg0 sudah up dan sudah punya peer/endpoint terkonfigurasi,
+# tidak perlu tanya ulang — ini yang bikin script ini aman dipanggil tanpa
+# prompt dari installer utama (../setup.sh) di run berikutnya.
+if wg show wg0 &>/dev/null && wg show wg0 | grep -q "endpoint:"; then
+  echo "WireGuard wg0 sudah aktif dan terkonfigurasi — skip setup."
+  wg show wg0
+  exit 0
+fi
+
 echo "=== [1/6] Install WireGuard ==="
 if ! command -v wg &>/dev/null; then
   apt-get update -qq
