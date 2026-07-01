@@ -8,6 +8,7 @@ import { DataStore } from './scraper/DataStore.js';
 import { SessionStore } from './scraper/SessionStore.js';
 import { JobQueue } from './queue/JobQueue.js';
 import { MqttPublisher } from './mqtt/MqttPublisher.js';
+import { TiktokGrowthOsBridge } from './scraper/TiktokGrowthOsBridge.js';
 import { ScheduleStore } from './scraper/ScheduleStore.js';
 import { Scheduler } from './scheduler/Scheduler.js';
 import { createMetrics } from './metrics/MetricsCollector.js';
@@ -75,8 +76,14 @@ if (config.db) {
 let pool         = null;
 let jobQueue     = null;
 let alertManager = null;
+
+const tiktokGrowthOsBridge = new TiktokGrowthOsBridge(config.tiktokGrowthOsBridge);
+if (tiktokGrowthOsBridge.enabled) {
+  console.log('[TiktokGrowthOsBridge] Aktif →', config.tiktokGrowthOsBridge.memoryDir);
+}
+
 if (config.redis && dataStore) {
-  pool = new BrowserPool(browser, { size: config.pool.size, profilePrefix: config.pool.profilePrefix });
+  pool = new BrowserPool(browser, { size: config.pool.size, profilePrefix: config.pool.profilePrefix, cdpUrl: config.browser.profiles.remote?.cdpUrl ?? null });
   try {
     await pool.init();
     console.log(`[BrowserPool] ${config.pool.size} slot siap (${config.pool.profilePrefix}-1..${config.pool.size})`);
@@ -93,7 +100,7 @@ if (config.redis && dataStore) {
     }
     // AlertManager dibuat setelah mqttPublisher tersedia agar bisa publish alert
     alertManager = new AlertManager(config.alerting, { mqttPublisher, eventBus });
-    jobQueue = new JobQueue(config.redis, { pool, manager: browser, dataStore, sessionStore, mqttPublisher, metrics, alertManager, eventBus });
+    jobQueue = new JobQueue(config.redis, { pool, manager: browser, dataStore, sessionStore, mqttPublisher, metrics, alertManager, eventBus, tiktokGrowthOsBridge });
     console.log('[JobQueue] BullMQ worker aktif');
   }
 }

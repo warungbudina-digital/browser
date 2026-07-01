@@ -47,10 +47,19 @@ skill/
 - `analyze_patterns.py` — group by angle/hook/topic, rank by completion rate + views
 - Tidak ada TikTok API, tidak ada login, tidak ada scraping
 
-**Rencana integrasi:**
-- Bisa jadi input layer: Claude generate konten → tiktok-uploader upload
-- `analyze_patterns.py` bisa jadi inspirasi scraper analytics kalau repo ini tambah TikTok metrics scraping
-- Untuk sekarang: referensi content strategy logic dan schema `analytics.json`
+**Status integrasi:**
+- **Implemented** — `src/scraper/TiktokGrowthOsBridge.js` otomatis log hasil
+  scrape TikTok (dari job gRPC CHR → `/scraper/jobs` → `TikTokScraper`) ke
+  `analytics.json` skill ini, dalam schema yang sama dengan `make_video_log()`
+  (lihat `scripts/lib/schema.py`). Aktifkan via `TIKTOK_GROWTH_OS_BRIDGE_ENABLED=true`
+  di `.env`. `topic`/`angle`/`hook_type` selalu kosong untuk entry hasil
+  scrape (tidak ada korelasi ke `content_bank.json` yang direncanakan secara
+  manual) dan `completion_rate` selalu `0` (TikTok tidak expose retention
+  rate di profil publik — hanya tersedia di creator analytics yang butuh
+  login). Jalankan `scripts/analyze_patterns.py` di HOST (bukan di container)
+  untuk regenerate `pattern_report.json` setelah scrape job baru selesai.
+- Belum: input layer (Claude generate konten → tiktok-uploader upload) — di
+  luar scope v1 ini, upload/posting TikTok belum diimplementasi.
 
 **File kunci:** `SKILL.md`, `references/hooks.md`, `references/retention.md`, `scripts/analyze_patterns.py`
 

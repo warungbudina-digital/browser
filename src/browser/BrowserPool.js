@@ -11,12 +11,14 @@ export class BrowserPool {
   #slots;        // [{ profile, busy, jobId }]
   #waiters = []; // [(resolve, reject, timer, jobId)]
   #prefix;
+  #cdpUrl;
 
   get size() { return this.#slots.length; }
 
-  constructor(manager, { size = 3, profilePrefix = 'pool' } = {}) {
+  constructor(manager, { size = 3, profilePrefix = 'pool', cdpUrl = null } = {}) {
     this.#manager = manager;
     this.#prefix  = profilePrefix;
+    this.#cdpUrl  = cdpUrl;
     this.#slots   = Array.from({ length: size }, (_, i) => ({
       profile: `${profilePrefix}-${i + 1}`,
       busy:    false,
@@ -28,11 +30,11 @@ export class BrowserPool {
   async init() {
     for (const slot of this.#slots) {
       try {
-        await this.#manager.createProfile({
-          name:    slot.profile,
-          driver:  'managed',
-          stealth: true,
-        });
+        await this.#manager.createProfile(
+          this.#cdpUrl
+            ? { name: slot.profile, driver: 'remote-cdp', cdpUrl: this.#cdpUrl, stealth: true }
+            : { name: slot.profile, driver: 'managed', stealth: true }
+        );
       } catch (err) {
         // Profile sudah ada dari run sebelumnya — tidak masalah
         if (!err.message?.includes('already exists')) throw err;

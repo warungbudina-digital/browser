@@ -123,10 +123,13 @@ services:
       MQTT_TOPIC_PREFIX: ${MQTT_TOPIC_PREFIX:-scraper/results}
       # ── API Security ──────────────────────────
       API_KEY:           ${API_KEY:-}
+      # ── TikTok Growth OS Bridge ────────────────
+      TIKTOK_GROWTH_OS_BRIDGE_ENABLED: ${TIKTOK_GROWTH_OS_BRIDGE_ENABLED:-false}
+      TIKTOK_GROWTH_OS_MEMORY_DIR:     /data/skill-memory/tiktok
       # ── Browser CDP (connect ke browser-runner service) ───
       BROWSER_CDP_URL:   "http://browser:9222"
       BROWSER_SSRF_DANGEROUSLY_ALLOW_PRIVATE_NETWORK: "true"
-      BROWSER_SSRF_HOSTNAME_ALLOWLIST: "itemku.com,www.itemku.com,shopee.co.id,www.shopee.co.id,tokopedia.com,www.tokopedia.com,bukalapak.com,www.bukalapak.com,lazada.co.id,www.lazada.co.id"
+      BROWSER_SSRF_HOSTNAME_ALLOWLIST: "itemku.com,www.itemku.com,shopee.co.id,www.shopee.co.id,tokopedia.com,www.tokopedia.com,bukalapak.com,www.bukalapak.com,lazada.co.id,www.lazada.co.id,tiktok.com,www.tiktok.com"
       # BROWSER_PROXY_SERVER: "http://host:port"
       # BROWSER_PROXY_USERNAME: ""
       # BROWSER_PROXY_PASSWORD: ""
@@ -138,6 +141,7 @@ services:
       - ./data/profiles:/data/profiles
       - ./data/artifacts:/data/artifacts
       - ./data/state:/data/state
+      - ${TIKTOK_GROWTH_OS_HOST_DIR:-/home/balibruntattour/.openclaw/workspace/memory/tiktok}:/data/skill-memory/tiktok
     depends_on:
       postgres:
         condition: service_healthy

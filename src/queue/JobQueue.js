@@ -31,13 +31,15 @@ export class JobQueue {
   #metrics;      // MetricsCollector | null
   #alertManager; // AlertManager | null
   #eventBus;     // EventBus | null
+  #tiktokBridge; // TiktokGrowthOsBridge | null
 
-  constructor(redisConfig, { pool, manager, dataStore, sessionStore = null, mqttPublisher = null, metrics = null, alertManager = null, eventBus = null }) {
+  constructor(redisConfig, { pool, manager, dataStore, sessionStore = null, mqttPublisher = null, metrics = null, alertManager = null, eventBus = null, tiktokGrowthOsBridge = null }) {
     this.#pool         = pool;
     this.#mqtt         = mqttPublisher;
     this.#metrics      = metrics;
     this.#alertManager = alertManager;
     this.#eventBus     = eventBus;
+    this.#tiktokBridge = tiktokGrowthOsBridge;
 
     this.#queue = new Queue(QUEUE_NAME, { connection: redisConfig });
 
@@ -108,6 +110,16 @@ export class JobQueue {
 
       const { profile, posts } = await scraper.scrape(dispatch, targetUrl, options ?? {});
       await dataStore.saveResults(jobId, platform, { profile, posts });
+
+      // ── Bridge: log hasil tiktok ke skill memory tiktok-growth-os (best-effort) ──
+      if (platform === 'tiktok' && this.#tiktokBridge?.enabled) {
+        try {
+          const result = await this.#tiktokBridge.logResults(jobId, { profile, posts });
+          if (result.ok) console.log(`[TiktokGrowthOsBridge] Logged ${result.added} video(s) for job ${jobId}`);
+        } catch (e) {
+          console.warn(`[TiktokGrowthOsBridge] Gagal log job ${jobId}: ${e.message}`);
+        }
+      }
 
       // ── Simpan cookies browser ke DB setelah scraping berhasil ──────
       if (sessionStore) {

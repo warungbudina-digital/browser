@@ -58,6 +58,10 @@ export function loadConfig(env = process.env) {
       cooldownMs:                  number(env.ALERT_COOLDOWN_MS, 5 * 60_000),
       webhookUrl:                  env.ALERT_WEBHOOK_URL || null,
     },
+    tiktokGrowthOsBridge: {
+      enabled:   bool(env.TIKTOK_GROWTH_OS_BRIDGE_ENABLED, false),
+      memoryDir: path.resolve(env.TIKTOK_GROWTH_OS_MEMORY_DIR || '/data/skill-memory/tiktok'),
+    },
     server: {
       port:   number(env.PORT, 8080),
       host:   env.HOST || '0.0.0.0',
