@@ -33,12 +33,23 @@ skill/
   simpan ke `SessionStore` supaya job scraping berikutnya untuk profile+platform
   itu auto-restore session yang sudah login. Lihat
   `src/scraper/CookiesTxtParser.js`, `examples/import-session.sh`.
-- Belum: upload/posting video itu sendiri — `BrowserService.upload()` (action
-  `upload`, `setInputFiles` ke `<input type=file>`) sudah ada sebagai primitive,
-  tapi flow lengkap (navigate ke halaman upload TikTok, isi caption, publish)
-  belum diimplementasi. Rencana: reimplementasi native Node.js pakai primitive
-  yang sudah ada, bukan subprocess ke `tiktok_manager.py`, supaya bisa reuse
-  session yang di-import lewat endpoint di atas.
+- **Implemented (upload/publish, belum live-verified)** — `POST /tiktok/publish`
+  (native Node.js, reuse primitive `BrowserService` yang sudah ada — `navigate`,
+  `upload`/`setInputFiles`, `act` type/click/wait — bukan subprocess ke
+  `tiktok_manager.py`) menjalankan flow lengkap: navigate ke halaman upload,
+  pilih file, tunggu processing, isi caption, opsional schedule (aturan sama
+  dengan `tiktok_manager.py`: 20 menit – 10 hari ke depan, menit dibulatkan ke
+  kelipatan 5), lalu publish. Butuh session TikTok yang sudah di-import lewat
+  `POST /sessions/:profile/import` — request ditolak kalau belum ada. Video
+  harus sudah ada di dalam `BROWSER_ARTIFACT_DIR` (`/data/artifacts`) sebelum
+  dipanggil. Lihat `src/scraper/platforms/tiktokUpload.js`,
+  `test/tiktok-upload.test.js`.
+- Belum live-diverifikasi: semua selector di `tiktokUpload.js` adalah best-guess
+  terhadap DOM halaman upload TikTok (belum ada akses ke session
+  authenticated saat implementasi ini ditulis) — sama seperti selector
+  `tiktok.js` yang awalnya salah diagnosis sebelum live test menemukan
+  captcha issue (lihat nudge note terkait). Perlu satu run end-to-end nyata
+  untuk mengoreksi selector sebelum dipakai produksi.
 - Cocok digabung dengan `tiktok-growth-os` sebagai execution layer
 
 **File kunci:** `scripts/tiktok_manager.py`, `SKILL.md`
