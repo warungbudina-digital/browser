@@ -8,3 +8,16 @@ state/
 # Konfigurasi lokal per-mesin (Claude Code) + backup otomatisnya
 .claude/settings.local.json
 .claude/settings.local.json.bak*
+
+# --- rahasia / kredensial: JANGAN pernah commit (bootstrap WG memuat private key) ---
+*bootstrap*.sh
+wireguard/bootstraps/
+wg0.conf
+wg*.conf
+*.key
+*_key
+*.pem
+*-secret*
+*.secret*
+.env.local
+.env.*.local
