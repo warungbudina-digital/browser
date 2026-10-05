@@ -10,6 +10,7 @@ import { buildSnapshotFromNodes, collectDomNodes, collectFrameNodes } from './sn
 import {
   textCollector, metaCollector, linksCollector,
   buildTextContent, buildMetadata, buildLinks,
+  parseMetaFromHtml, parseLinksFromHtml, parseTextFromHtml,
 } from './ContentExtractor.js';
 import { diff, diffText } from './SnapshotDiff.js';
 import {
@@ -278,48 +279,41 @@ export class BrowserService {
   async extract({ targetId, kind = 'text' }) {
     const page = await this.#getPage(targetId);
     const url   = page.url();
-    const title = await page.title();
     const pid   = this.#pageId(page);
 
-    // Hindari race navigate->extract: pastikan DOM siap + execution context hidup.
-    // waitForFunction mem-poll (retry internal) -> aman thd kekosongan sesaat connectOverCDP.
+    // DOM via CDP (bukan Runtime.evaluate — tak stabil di patchright+connectOverCDP):
+    // DOM.getDocument + DOM.getOuterHTML pakai domain DOM murni (seperti snapshot),
+    // lalu parse di Node. Deterministik & version-independent.
     await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
-    await page.waitForFunction(
-      () => document.body && document.body.children.length > 0,
-      { timeout: 10000 },
-    ).catch(() => {});
+    let html = '';
+    const client = await page.context().newCDPSession(page);
+    try {
+      const { root } = await client.send('DOM.getDocument', { depth: 0 });
+      const res = await client.send('DOM.getOuterHTML', { nodeId: root.nodeId });
+      html = res.outerHTML || '';
+    } finally {
+      await client.detach().catch(() => {});
+    }
 
-    // patchright >=1.61 memecah page.evaluate(functionRef) via connectOverCDP (balik kosong).
-    // Jalankan collector sbg STRING source (bentuk yg terbukti tetap jalan).
-    const run = (collector) => page.evaluate((src) => {
-      const fn = new Function(`return (${src})()`);
-      return fn();
-    }, collector.toString());
+    const metadata = buildMetadata(parseMetaFromHtml(html));
+    const title = metadata.title;
 
     if (kind === 'meta') {
-      const raw = await run(metaCollector);
-      return { ok: true, profileName: this.profileName, targetId: pid, url, title, kind, ...buildMetadata(raw) };
+      return { ok: true, profileName: this.profileName, targetId: pid, url, title, kind, ...metadata };
     }
     if (kind === 'links') {
-      const raw = await run(linksCollector);
-      return { ok: true, profileName: this.profileName, targetId: pid, url, title, kind, ...buildLinks(raw, url) };
+      return { ok: true, profileName: this.profileName, targetId: pid, url, title, kind, ...buildLinks(parseLinksFromHtml(html, url), url) };
     }
     if (kind === 'full') {
-      const [rawText, rawMeta, rawLinks] = await Promise.all([
-        run(textCollector),
-        run(metaCollector),
-        run(linksCollector),
-      ]);
       return {
         ok: true, profileName: this.profileName, targetId: pid, url, title, kind,
-        content:  buildTextContent(rawText),
-        metadata: buildMetadata(rawMeta),
-        links:    buildLinks(rawLinks, url),
+        content:  buildTextContent(parseTextFromHtml(html)),
+        metadata,
+        links:    buildLinks(parseLinksFromHtml(html, url), url),
       };
     }
     // default: 'text'
-    const raw = await run(textCollector);
-    return { ok: true, profileName: this.profileName, targetId: pid, url, title, kind, ...buildTextContent(raw) };
+    return { ok: true, profileName: this.profileName, targetId: pid, url, title, kind, ...buildTextContent(parseTextFromHtml(html)) };
   }
 
   async screenshot({ targetId, ref, selector, fullPage = false, path: outputPath }) {

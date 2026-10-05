@@ -228,3 +228,92 @@ export function summarize(text, maxChars = 500) {
   const cut = trimmed.lastIndexOf(' ', maxChars - 3);
   return (cut > 0 ? trimmed.slice(0, cut) : trimmed.slice(0, maxChars - 3)) + '...';
 }
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Node-side HTML parsers (dari CDP DOM.getOuterHTML / page.content()).
+// Dipakai extract() sbg ganti page.evaluate collectors yg TAK stabil di
+// patchright+connectOverCDP (patchright hindari Runtime.enable). Bentuk `raw`
+// yg dikembalikan SAMA dgn collector -> build* tetap dipakai apa adanya.
+// ─────────────────────────────────────────────────────────────────────────────
+export function decodeEntities(x) {
+  if (!x) return '';
+  return String(x)
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d+);/g, (_, n) => { try { return String.fromCodePoint(+n); } catch { return ''; } })
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => { try { return String.fromCodePoint(parseInt(n, 16)); } catch { return ''; } });
+}
+export function stripTags(x) {
+  return decodeEntities(String(x || '').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+}
+function htmlAttr(tag, name) {
+  const m = tag.match(new RegExp(name + '\\s*=\\s*"([^"]*)"', 'i'))
+         || tag.match(new RegExp(name + "\\s*=\\s*'([^']*)'", 'i'));
+  return m ? m[1] : '';
+}
+
+export function parseMetaFromHtml(html) {
+  html = String(html || '');
+  const head = (html.match(/<head[\s\S]*?<\/head>/i) || [html])[0];
+  const map = {};
+  for (const tag of head.match(/<meta\s[^>]*>/gi) || []) {
+    const k = (htmlAttr(tag, 'name') || htmlAttr(tag, 'property')).toLowerCase();
+    if (k) map[k] = decodeEntities(htmlAttr(tag, 'content'));
+  }
+  const g = (k) => map[k] || '';
+  const title = decodeEntities((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || ['', ''])[1]).trim();
+  const canonicalTag = (head.match(/<link[^>]+rel\s*=\s*["']canonical["'][^>]*>/i) || [''])[0];
+  const jsonLd = [];
+  const ldRe = /<script[^>]+type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let mm;
+  while ((mm = ldRe.exec(html))) { try { jsonLd.push(JSON.parse(mm[1].trim())); } catch { /* skip */ } }
+  return {
+    title,
+    description: g('description') || g('og:description'),
+    canonical: htmlAttr(canonicalTag, 'href'),
+    ogTitle: g('og:title'), ogDescription: g('og:description'), ogImage: g('og:image'), ogType: g('og:type'),
+    twitterCard: g('twitter:card'), twitterTitle: g('twitter:title'),
+    twitterDescription: g('twitter:description'), twitterImage: g('twitter:image'),
+    keywords: g('keywords'), robots: g('robots'), author: g('author'), jsonLd,
+  };
+}
+
+export function parseLinksFromHtml(html, baseUrl) {
+  const out = [];
+  const re = /<a\s[^>]*?href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(String(html || '')))) {
+    let href = m[1];
+    if (/^\s*javascript:/i.test(href)) continue;
+    try { href = new URL(href, baseUrl).href; } catch { /* keep raw */ }
+    out.push({ text: stripTags(m[2]) || htmlAttr(m[0], 'aria-label'), href, rel: htmlAttr(m[0], 'rel') });
+  }
+  return out;
+}
+
+export function parseTextFromHtml(html) {
+  const body = (String(html || '').match(/<body[\s\S]*?<\/body>/i) || [String(html || '')])[0]
+    .replace(/<(script|style|noscript|template|svg)\b[\s\S]*?<\/\1>/gi, ' ');
+  const sections = [];
+  const re = /<(h[1-6]|p|ul|ol|table|blockquote|pre)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+  let m;
+  while ((m = re.exec(body))) {
+    const tag = m[1].toLowerCase(); const inner = m[2];
+    if (/^h[1-6]$/.test(tag)) { const t = stripTags(inner); if (t) sections.push({ type: 'heading', level: +tag[1], text: t }); }
+    else if (tag === 'p') { const t = stripTags(inner); if (t.length >= 5) sections.push({ type: 'paragraph', text: t }); }
+    else if (tag === 'ul' || tag === 'ol') {
+      const items = (inner.match(/<li\b[^>]*>([\s\S]*?)<\/li>/gi) || [])
+        .map((li) => stripTags(li.replace(/^<li\b[^>]*>/i, '').replace(/<\/li>\s*$/i, ''))).filter(Boolean);
+      if (items.length) sections.push({ type: 'list', ordered: tag === 'ol', items });
+    } else if (tag === 'table') {
+      const rows = (inner.match(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi) || []).map((tr) =>
+        (tr.match(/<(th|td)\b[^>]*>([\s\S]*?)<\/(th|td)>/gi) || [])
+          .map((c) => stripTags(c.replace(/^<(th|td)\b[^>]*>/i, '').replace(/<\/(th|td)>\s*$/i, '')))
+      ).filter((r) => r.length && r.some(Boolean));
+      if (rows.length) sections.push({ type: 'table', rows });
+    } else if (tag === 'blockquote') { const t = stripTags(inner); if (t) sections.push({ type: 'quote', text: t }); }
+    else if (tag === 'pre') { const t = stripTags(inner); if (t) sections.push({ type: 'code', text: t }); }
+  }
+  return sections;
+}
