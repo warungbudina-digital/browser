@@ -281,19 +281,26 @@ export class BrowserService {
     const title = await page.title();
     const pid   = this.#pageId(page);
 
+    // patchright >=1.61 memecah page.evaluate(functionRef) via connectOverCDP (balik kosong).
+    // Jalankan collector sbg STRING source (bentuk yg terbukti tetap jalan).
+    const run = (collector) => page.evaluate((src) => {
+      const fn = new Function(`return (${src})()`);
+      return fn();
+    }, collector.toString());
+
     if (kind === 'meta') {
-      const raw = await page.evaluate(metaCollector);
+      const raw = await run(metaCollector);
       return { ok: true, profileName: this.profileName, targetId: pid, url, title, kind, ...buildMetadata(raw) };
     }
     if (kind === 'links') {
-      const raw = await page.evaluate(linksCollector);
+      const raw = await run(linksCollector);
       return { ok: true, profileName: this.profileName, targetId: pid, url, title, kind, ...buildLinks(raw, url) };
     }
     if (kind === 'full') {
       const [rawText, rawMeta, rawLinks] = await Promise.all([
-        page.evaluate(textCollector),
-        page.evaluate(metaCollector),
-        page.evaluate(linksCollector),
+        run(textCollector),
+        run(metaCollector),
+        run(linksCollector),
       ]);
       return {
         ok: true, profileName: this.profileName, targetId: pid, url, title, kind,
@@ -303,7 +310,7 @@ export class BrowserService {
       };
     }
     // default: 'text'
-    const raw = await page.evaluate(textCollector);
+    const raw = await run(textCollector);
     return { ok: true, profileName: this.profileName, targetId: pid, url, title, kind, ...buildTextContent(raw) };
   }
 
