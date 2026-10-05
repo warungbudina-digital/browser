@@ -65,6 +65,10 @@ services:
       context: .
       target: browser-runner
     restart: unless-stopped
+    environment:
+      BROWSER_PROXY: "${BROWSER_PROXY:-}"
+      BROWSER_UA: "${BROWSER_UA:-}"
+      BROWSER_LANG: "${BROWSER_LANG:-}"
     shm_size: "2gb"
     security_opt:
       - seccomp:unconfined

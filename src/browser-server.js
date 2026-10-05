@@ -48,7 +48,13 @@ function waitForChrome(maxMs = 30_000) {
   const chromePath = findChrome();
   console.log(`[browser-server] Starting: ${chromePath}`);
 
-  const chrome = spawn(chromePath, [
+  const DEFAULT_UA =
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ' +
+    '(KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36';
+  const UA    = process.env.BROWSER_UA    || DEFAULT_UA;   // buang label HeadlessChrome
+  const PROXY = process.env.BROWSER_PROXY || '';           // opt-in; kosong = tanpa proxy
+  const LANG  = process.env.BROWSER_LANG  || 'en-US,en;q=0.9';
+  const chromeArgs = [
     '--no-sandbox',
     '--disable-gpu',
     '--disable-dev-shm-usage',
@@ -56,7 +62,13 @@ function waitForChrome(maxMs = 30_000) {
     '--headless=new',
     `--remote-debugging-port=${CHROME_PORT}`,
     '--user-data-dir=/tmp/chrome-data',
-  ], { stdio: 'inherit' });
+    `--user-agent=${UA}`,
+    '--disable-blink-features=AutomationControlled',
+    `--accept-lang=${LANG}`,
+  ];
+  if (PROXY) chromeArgs.push(`--proxy-server=${PROXY}`);
+  console.log(`[browser-server] UA set, proxy=${PROXY || '(none)'}`);
+  const chrome = spawn(chromePath, chromeArgs, { stdio: 'inherit' });
 
   chrome.on('exit', (code, signal) => {
     console.error(`[browser-server] Chrome exited code=${code} signal=${signal}`);
