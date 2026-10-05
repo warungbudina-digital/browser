@@ -1,6 +1,24 @@
 services:
 
   # ────────────────────────────────────────────
+  # di-relay — SOCKS5 relay (inject kredensial proxy residensial upstream).
+  # Browser pakai socks5://di-relay:1080; upstream = $DI_PROXY (.env).
+  # Hanya aktif dgn `--profile proxy` + DI_PROXY di .env.
+  # ────────────────────────────────────────────
+  di-relay:
+    image: ginuerzh/gost
+    container_name: di-relay
+    restart: unless-stopped
+    command: ["-L", "socks5://:1080", "-F", "${DI_PROXY:?DI_PROXY wajib utk profile proxy}"]
+    profiles: ["proxy"]
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+          cpus: "0.3"
+
+
+  # ────────────────────────────────────────────
   # Redis — BullMQ job queue backend
   # ────────────────────────────────────────────
   redis:
