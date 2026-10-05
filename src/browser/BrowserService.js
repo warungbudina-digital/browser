@@ -281,6 +281,14 @@ export class BrowserService {
     const title = await page.title();
     const pid   = this.#pageId(page);
 
+    // Hindari race navigate->extract: pastikan DOM siap + execution context hidup.
+    // waitForFunction mem-poll (retry internal) -> aman thd kekosongan sesaat connectOverCDP.
+    await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
+    await page.waitForFunction(
+      () => document.body && document.body.children.length > 0,
+      { timeout: 10000 },
+    ).catch(() => {});
+
     // patchright >=1.61 memecah page.evaluate(functionRef) via connectOverCDP (balik kosong).
     // Jalankan collector sbg STRING source (bentuk yg terbukti tetap jalan).
     const run = (collector) => page.evaluate((src) => {
