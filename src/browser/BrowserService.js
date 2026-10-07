@@ -285,14 +285,17 @@ export class BrowserService {
     // DOM.getDocument + DOM.getOuterHTML pakai domain DOM murni (seperti snapshot),
     // lalu parse di Node. Deterministik & version-independent.
     await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
+    // Ambil HTML via page.evaluate bentuk-STRING (pola act yg terbukti stabil di
+    // patchright+connectOverCDP; bentuk functionRef/CDP DOM TAK andal di sini).
+    // Retry ride-out window kosong intermiten pasca-navigate.
     let html = '';
-    const client = await page.context().newCDPSession(page);
-    try {
-      const { root } = await client.send('DOM.getDocument', { depth: 0 });
-      const res = await client.send('DOM.getOuterHTML', { nodeId: root.nodeId });
-      html = res.outerHTML || '';
-    } finally {
-      await client.detach().catch(() => {});
+    for (let i = 0; i < 8; i++) {
+      html = await page.evaluate((src) => {
+        const fn = new Function('return (' + src + ')();');
+        return fn();
+      }, '() => document.documentElement.outerHTML').catch(() => '');
+      if (html && html.length > 200) break;
+      await new Promise((r) => setTimeout(r, 300));
     }
 
     const metadata = buildMetadata(parseMetaFromHtml(html));
