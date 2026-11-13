@@ -16,11 +16,12 @@ const scraperJobSchema = z.object({
 });
 
 const analyticsSchema = z.object({
-  metric:   z.enum(['engagement', 'top_posts', 'hashtags', 'frequency', 'profile_history', 'platform_summary']),
+  metric:   z.enum(['engagement', 'top_posts', 'hashtags', 'frequency', 'profile_history', 'platform_summary', 'post_growth']),
   platform: z.enum(SUPPORTED_PLATFORMS).optional(),
   username: z.string().optional(),
-  limit:    z.number().int().positive().optional(),
-  days:     z.number().int().positive().optional()
+  postId:   z.string().optional(),
+  limit:    z.coerce.number().int().positive().optional(),
+  days:     z.coerce.number().int().positive().optional()
 });
 
 const exportQuerySchema = z.object({
@@ -116,6 +117,9 @@ export function registerScraperRoutes(app, { scraper, dataStore }) {
           return { ok: true, data: await analytics.profileHistory(pool, q) };
         case 'platform_summary':
           return { ok: true, data: await analytics.platformSummary(pool, q) };
+        case 'post_growth':
+          if (!q.postId) { reply.code(400); return { ok: false, error: 'postId wajib diisi utk metric post_growth' }; }
+          return { ok: true, data: await analytics.postGrowth(pool, q) };
         default:
           reply.code(400);
           return { ok: false, error: 'Unknown metric' };

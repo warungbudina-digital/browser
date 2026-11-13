@@ -1,13 +1,32 @@
 /**
  * Analytics queries — semua return plain objects, siap di-JSON-serialize.
  * Semua query non-destructive (SELECT only).
+ *
+ * `scraped_posts` sengaja APPEND-ONLY (1 baris baru per scrape, lihat DataStore.js) —
+ * ini DISENGAJA supaya histori metrik per-post (likes/comments/views dari waktu ke
+ * waktu) bisa ditarik lewat postGrowth() di bawah, bukan sekadar snapshot terakhir.
+ * TAPI akibatnya setiap query "kondisi SEKARANG" (top post, hashtag, rata-rata
+ * engagement) HARUS dedupe ke snapshot TERBARU per post dulu — kalau tidak, re-scrape
+ * akun yang sama bikin post lama terhitung berkali-kali (dibuktikan nyata 13/11:
+ * 2 post gogobud13 ter-scrape 2x jadi 4 baris, top_posts dobel). LATEST_POST di
+ * bawah = satu sumber dedup yang dipakai ulang di semua query "kondisi sekarang".
  */
+const LATEST_POSTS_CTE = `
+  SELECT DISTINCT ON (author_username, COALESCE(post_id, post_url))
+    post_url, post_id, author_username, content,
+    likes_count, comments_count, shares_count, views_count,
+    hashtags, media_urls, posted_at, scraped_at
+  FROM scraped_posts
+  WHERE platform = $1 AND author_username = $2
+  ORDER BY author_username, COALESCE(post_id, post_url), scraped_at DESC
+`;
 
 export async function engagementStats(pool, { platform, username }) {
   const { rows } = await pool.query(
-    `SELECT
+    `WITH latest_posts AS (${LATEST_POSTS_CTE})
+     SELECT
        p.username,
-       COUNT(po.id)                                             AS post_count,
+       COUNT(po.*)                                             AS post_count,
        COALESCE(AVG(po.likes_count), 0)                        AS avg_likes,
        COALESCE(AVG(po.comments_count), 0)                     AS avg_comments,
        COALESCE(AVG(po.shares_count), 0)                       AS avg_shares,
@@ -21,10 +40,13 @@ export async function engagementStats(pool, { platform, username }) {
          ), 0
        )                                                        AS avg_engagement_rate,
        MAX(p.followers_count)                                   AS followers_count
-     FROM scraped_profiles p
-     JOIN scraped_posts po
-       ON po.author_username = p.username AND po.platform = p.platform
-     WHERE p.platform = $1 AND p.username = $2
+     FROM (
+       SELECT DISTINCT ON (username) username, followers_count
+       FROM scraped_profiles
+       WHERE platform = $1 AND username = $2
+       ORDER BY username, scraped_at DESC
+     ) p
+     LEFT JOIN latest_posts po ON po.author_username = p.username
      GROUP BY p.username`,
     [platform, username]
   );
@@ -33,13 +55,13 @@ export async function engagementStats(pool, { platform, username }) {
 
 export async function topPosts(pool, { platform, username, limit = 10 }) {
   const { rows } = await pool.query(
-    `SELECT
+    `WITH latest_posts AS (${LATEST_POSTS_CTE})
+     SELECT
        post_url, post_id, content,
        likes_count, comments_count, shares_count, views_count,
        (likes_count + comments_count + shares_count) AS total_engagement,
        hashtags, media_urls, posted_at, scraped_at
-     FROM scraped_posts
-     WHERE platform = $1 AND author_username = $2
+     FROM latest_posts
      ORDER BY total_engagement DESC
      LIMIT $3`,
     [platform, username, limit]
@@ -49,14 +71,13 @@ export async function topPosts(pool, { platform, username, limit = 10 }) {
 
 export async function hashtagStats(pool, { platform, username, limit = 20 }) {
   const { rows } = await pool.query(
-    `SELECT
+    `WITH latest_posts AS (${LATEST_POSTS_CTE})
+     SELECT
        unnest(hashtags)                             AS hashtag,
        COUNT(*)                                     AS usage_count,
        ROUND(AVG(likes_count + comments_count), 1) AS avg_engagement
-     FROM scraped_posts
-     WHERE platform = $1
-       AND author_username = $2
-       AND array_length(hashtags, 1) > 0
+     FROM latest_posts
+     WHERE array_length(hashtags, 1) > 0
      GROUP BY hashtag
      ORDER BY usage_count DESC, avg_engagement DESC
      LIMIT $3`,
@@ -66,19 +87,41 @@ export async function hashtagStats(pool, { platform, username, limit = 20 }) {
 }
 
 export async function postingFrequency(pool, { platform, username, days = 30 }) {
+  // Dikelompokkan per tanggal POSTING asli (posted_at), bukan tanggal scrape —
+  // supaya "frekuensi posting" benar2 mengukur seberapa sering user upload konten,
+  // bukan seberapa sering kita menjalankan scraper. Dedupe ke snapshot terbaru per
+  // post dulu (CTE) supaya re-scrape tak menggandakan hitungan post per hari.
   const { rows } = await pool.query(
-    `SELECT
-       DATE_TRUNC('day', scraped_at)::date AS day,
+    `WITH latest_posts AS (${LATEST_POSTS_CTE})
+     SELECT
+       DATE_TRUNC('day', COALESCE(posted_at, scraped_at))::date AS day,
        COUNT(*)                            AS post_count,
        SUM(likes_count)                    AS total_likes,
        SUM(comments_count)                 AS total_comments
-     FROM scraped_posts
-     WHERE platform = $1
-       AND author_username = $2
-       AND scraped_at > NOW() - ($3 || ' days')::INTERVAL
+     FROM latest_posts
+     WHERE COALESCE(posted_at, scraped_at) > NOW() - ($3 || ' days')::INTERVAL
      GROUP BY day
      ORDER BY day`,
     [platform, username, days]
+  );
+  return rows;
+}
+
+/**
+ * Evaluasi SATU post/reel dari waktu ke waktu — histori likes/comments/shares/views
+ * tiap kali post itu di-scrape ulang. Ini fitur "evaluasi tiap reel yang saya upload"
+ * yang eksplisit diminta user (2026-11-13): butuh RAW history (bukan latest-only),
+ * jadi SENGAJA tidak pakai LATEST_POSTS_CTE di atas.
+ */
+export async function postGrowth(pool, { platform, postId }) {
+  const { rows } = await pool.query(
+    `SELECT
+       post_url, content, likes_count, comments_count, shares_count, views_count,
+       scraped_at
+     FROM scraped_posts
+     WHERE platform = $1 AND post_id = $2
+     ORDER BY scraped_at`,
+    [platform, postId]
   );
   return rows;
 }
