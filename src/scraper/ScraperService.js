@@ -2,11 +2,13 @@ import crypto from 'node:crypto';
 import { InstagramScraper } from './platforms/instagram.js';
 import { TikTokScraper }    from './platforms/tiktok.js';
 import { TwitterScraper }   from './platforms/twitter.js';
+import { FacebookScraper }  from './platforms/facebook.js';
 
 export const SCRAPERS = {
   instagram: new InstagramScraper(),
   tiktok:    new TikTokScraper(),
   twitter:   new TwitterScraper(),
+  facebook:  new FacebookScraper(),
 };
 
 export const SUPPORTED_PLATFORMS = Object.keys(SCRAPERS);
