@@ -1,4 +1,4 @@
-import { normalizeProfile, normalizePost, isLoginWall } from '../DataExtractor.js';
+import { normalizeProfile, normalizePost, isLoginWall, extractProfileWithRetry } from '../DataExtractor.js';
 
 const PLATFORM = 'instagram';
 
@@ -106,13 +106,15 @@ export class InstagramScraper {
     await dispatch('act', { request: { kind: 'wait', loadState: 'networkidle', timeoutMs: 20000 } });
     await dispatch('warmup');
 
-    // Extract profile
-    const { result: rawProfile } = await dispatch('act', {
-      request: { kind: 'evaluate', fn: EXTRACT_PROFILE }
-    });
+    // Extract profile (retry otomatis sekali kalau kena redirect diam-diam, lihat
+    // extractProfileWithRetry di DataExtractor.js)
+    const rawProfile = await extractProfileWithRetry(dispatch, targetUrl, EXTRACT_PROFILE);
 
     if (isLoginWall(rawProfile)) {
       throw new Error('Instagram memerlukan login untuk mengakses halaman ini');
+    }
+    if (!rawProfile?.username) {
+      throw new Error('Gagal mengekstrak profil Instagram (kemungkinan redirect/struktur halaman berubah) -- targetUrl=' + targetUrl);
     }
 
     const profile = normalizeProfile(rawProfile, PLATFORM);

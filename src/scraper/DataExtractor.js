@@ -27,6 +27,32 @@ export function isLoginWall(result) {
   return indicators.some((k) => result[k] === true);
 }
 
+/**
+ * Evaluasi fungsi ekstraksi profil, retry SEKALI via re-navigate kalau hasilnya
+ * BUKAN login-wall tapi username-nya kosong.
+ *
+ * (2026-11-13, bug nyata via /scraper/jobs IG pertama kali diuji end-to-end)
+ * Sesi login aktif (dipulihkan JobQueue dari SessionStore sebelum tiap job) bisa
+ * membuat platform me-redirect DIAM-DIAM dari URL profil ke halaman lain (terbukti
+ * live: Instagram redirect ke feed "/" saat navigate langsung ke URL profil dengan
+ * cookie login aktif) — isLoginWall() TIDAK mendeteksi ini (bukan teks login-wall),
+ * tapi username yang diturunkan dari window.location.pathname jadi string kosong
+ * → null, lalu INSERT ke scraped_profiles gagal dgn raw NOT NULL constraint error.
+ * Dibuktikan live: navigate KE-DUA ke URL YANG SAMA (tanpa mengubah apa pun lagi)
+ * cukup — SPA sudah "settle" setelah request pertama, percobaan kedua konsisten
+ * mendarat di halaman target yang benar. Retry cukup SEKALI (bukan loop) karena
+ * kalau percobaan kedua masih gagal, kemungkinan besar bukan soal timing lagi.
+ */
+export async function extractProfileWithRetry(dispatch, targetUrl, extractFn, { waitTimeoutMs = 20000 } = {}) {
+  let { result: raw } = await dispatch('act', { request: { kind: 'evaluate', fn: extractFn } });
+  if (!isLoginWall(raw) && !raw?.username) {
+    await dispatch('navigate', { url: targetUrl });
+    await dispatch('act', { request: { kind: 'wait', loadState: 'networkidle', timeoutMs: waitTimeoutMs } });
+    ({ result: raw } = await dispatch('act', { request: { kind: 'evaluate', fn: extractFn } }));
+  }
+  return raw;
+}
+
 /** Normalize profile data — isi field yang hilang dengan null */
 export function normalizeProfile(raw, platform) {
   return {

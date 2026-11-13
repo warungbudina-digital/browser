@@ -1,4 +1,4 @@
-import { normalizeProfile, normalizePost } from '../DataExtractor.js';
+import { normalizeProfile, normalizePost, isLoginWall, extractProfileWithRetry } from '../DataExtractor.js';
 
 const PLATFORM = 'twitter';
 
@@ -131,9 +131,14 @@ export class TwitterScraper {
     await dispatch('act', { request: { kind: 'wait', loadState: 'networkidle', timeoutMs: 25000 } });
     await dispatch('warmup');
 
-    const { result: rawProfile } = await dispatch('act', {
-      request: { kind: 'evaluate', fn: EXTRACT_PROFILE }
-    });
+    const rawProfile = await extractProfileWithRetry(dispatch, normalized, EXTRACT_PROFILE);
+
+    if (isLoginWall(rawProfile)) {
+      throw new Error('Twitter/X memerlukan login untuk mengakses halaman ini');
+    }
+    if (!rawProfile?.username) {
+      throw new Error('Gagal mengekstrak profil Twitter/X (kemungkinan redirect/struktur halaman berubah) -- targetUrl=' + normalized);
+    }
 
     const profile = normalizeProfile(rawProfile, PLATFORM);
 
