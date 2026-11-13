@@ -24,7 +24,20 @@ const EXTRACT_PROFILE = `() => {
   const desc  = meta('og:description') || '';
   const image = meta('og:image') || null;
 
-  const username = window.location.pathname.replace(/^\\/|\\/$/g, '').split('/')[0] || null;
+  // URL Page Facebook punya 3 bentuk: vanity ("/wayanb1/"), ID-based baru
+  // ("/p/Clipper-gogobud-61595521889739/") dan /people/<nama>/<id>/ (hasil
+  // resolve share-link). Ambil slug yang paling deskriptif dari tiap bentuk.
+  const path = window.location.pathname;
+  const pMatch = path.match(/^\\/p\\/([^/]+)\\/?$/);
+  const peopleMatch = path.match(/^\\/people\\/([^/]+)\\/(\\d+)/);
+  let username;
+  if (pMatch) {
+    username = pMatch[1].replace(/-\\d+$/, '') || pMatch[1];
+  } else if (peopleMatch) {
+    username = peopleMatch[1] + '-' + peopleMatch[2];
+  } else {
+    username = path.replace(/^\\/|\\/$/g, '').split('/')[0] || null;
+  }
 
   // "123 pengikut" / "123 followers" / "123 orang menyukai ini" / "123 likes"
   const parseNum = (m) => {
