@@ -108,6 +108,7 @@ services:
   # Browser automation + scraper API  (slim — no bundled Chromium)
   # ────────────────────────────────────────────
   full-tool-browser:
+    restart: unless-stopped
     build:
       context: .
       target: runtime
