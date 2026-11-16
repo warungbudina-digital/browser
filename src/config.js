@@ -120,6 +120,15 @@ export function loadConfig(env = process.env) {
           driver: 'remote-cdp',
           cdpUrl: env.BROWSER_CDP_URL,
           color: '#00AA00'
+        } : undefined,
+        // .61's shared human-driven GUI browser (KasmVNC). Read/extract only —
+        // never click/type/fill/act. stealth MUST stay false: autoWarmup does
+        // a real mouse-move against the human's actual first tab otherwise.
+        'gui61-live': env.BROWSER_GUI61_CDP_URL ? {
+          driver: 'remote-cdp',
+          cdpUrl: env.BROWSER_GUI61_CDP_URL,
+          color: '#00AA00',
+          stealth: false
         } : undefined
       }
     }

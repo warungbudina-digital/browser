@@ -151,6 +151,9 @@ services:
       TIKTOK_GROWTH_OS_MEMORY_DIR:     /data/skill-memory/tiktok
       # ── Browser CDP (connect ke browser-runner service) ───
       BROWSER_CDP_URL:   "http://browser:9222"
+      # .61's shared GUI Chromium, via cdp-relay (scoped to .60 only). Seeds
+      # the gui61-live profile automatically on every container start.
+      BROWSER_GUI61_CDP_URL: "http://10.66.66.61:9222"
       BROWSER_SSRF_DANGEROUSLY_ALLOW_PRIVATE_NETWORK: "true"
       BROWSER_SSRF_HOSTNAME_ALLOWLIST: "itemku.com,www.itemku.com,shopee.co.id,www.shopee.co.id,tokopedia.com,www.tokopedia.com,bukalapak.com,www.bukalapak.com,lazada.co.id,www.lazada.co.id,tiktok.com,www.tiktok.com"
       # BROWSER_PROXY_SERVER: "http://host:port"
